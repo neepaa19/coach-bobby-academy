@@ -4,22 +4,20 @@
 
 Build the world's best interactive soccer coaching academy.
 
-The goal is not to memorize tactics.
-The goal is to think like an elite coach.
+Teach users to think like elite soccer coaches through interactive decision making, tactical simulations, and adaptive learning.
 
-Every lesson should teach the user why a decision is correct, not just whether it is correct.
+The goal is not to memorize soccer.
+
+The goal is to understand WHY.
 
 ---
 
 ## Core Principles
 
-- Adaptive learning
-- Real tactical scenarios
-- Multi-pass decision making
-- Visual explanations
-- Learn by doing
-- Coach IQ progression
-- Real coach philosophies
-- Real player tendencies
-- Match preparation
-- Tactical sandbox
+- Teach WHY before WHAT.
+- Real game situations.
+- Adaptive learning.
+- Every answer must be explainable.
+- Multiple tactical solutions can be correct.
+- Build intuition through repetition.
+- Serious learning should still be fun.
