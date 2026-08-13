@@ -119,4 +119,43 @@ test('distance to goal decreases as you move upfield', () => {
   assert.ok(distanceToGoal(P('a', 'X', 80, 34)) < distanceToGoal(P('b', 'X', 20, 34)));
 });
 
+
+/* --- Scenario data integrity -------------------------------------------
+ * Two players authored on the same coordinates render as one circle and make
+ * the engine believe the receiver has zero separation, so every pass to him
+ * scores as impossible. This caught two real cases.
+ */
+import { SCENARIOS } from '../src/scenarios.js';
+await import('../src/scenario-pack-2.js');
+
+test('no two players in any scenario stand within 2.2 yards', () => {
+  const problems = [];
+  for (const s of SCENARIOS) {
+    const all = [...s.ours, ...s.theirs];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const d = Math.hypot(all[i].x - all[j].x, all[i].y - all[j].y);
+        if (d < 2.2) problems.push(`${s.id}: ${all[i].pos} and ${all[j].pos} are ${d.toFixed(1)} yd apart`);
+      }
+    }
+  }
+  assert.deepEqual(problems, []);
+});
+
+test('every scenario has 11 a side and a valid starting carrier', () => {
+  for (const s of SCENARIOS) {
+    assert.equal(s.ours.length, 11, `${s.id} our team`);
+    assert.equal(s.theirs.length, 11, `${s.id} their team`);
+    assert.ok(s.ours.some((p) => p.id === s.startCarrier), `${s.id} startCarrier exists`);
+  }
+});
+
+test('every player sits inside the pitch', () => {
+  for (const s of SCENARIOS) {
+    for (const p of [...s.ours, ...s.theirs]) {
+      assert.ok(p.x >= 0 && p.x <= 105 && p.y >= 0 && p.y <= 68, `${s.id} ${p.pos} at ${p.x},${p.y}`);
+    }
+  }
+});
+
 console.log(`\n${passed} passing`);
