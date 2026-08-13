@@ -107,7 +107,7 @@ const PACK = [
     ours: squad([
       ['u-gk', 'GK', 16, 34, 'keeper'],
       ['u-rb', 'RB', 68, 10], ['u-rcb', 'RCB', 54, 27], ['u-lcb', 'LCB', 54, 40], ['u-lb', 'LB', 74, 56],
-      ['u-dm', 'DM', 62, 34], ['u-rcm', 'RCM', 72, 26], ['u-lcm', 'LCM', 70, 43],
+      ['u-dm', 'DM', 58, 31], ['u-rcm', 'RCM', 72, 26], ['u-lcm', 'LCM', 70, 43],
       ['u-rw', 'RW', 84, 12], ['u-st', 'ST', 86, 34], ['u-lw', 'LW', 80, 55],
     ]),
     theirs: narrowBlock,
@@ -161,7 +161,7 @@ const PACK = [
     ours: squad([
       ['u-gk', 'GK', 14, 34, 'keeper'],
       ['u-rb', 'RB', 60, 11], ['u-rcb', 'RCB', 34, 26], ['u-lcb', 'LCB', 34, 40], ['u-lb', 'LB', 52, 58],
-      ['u-dm', 'DM', 46, 32], ['u-rcm', 'RCM', 60, 22], ['u-lcm', 'LCM', 52, 40],
+      ['u-dm', 'DM', 46, 32], ['u-rcm', 'RCM', 58, 19], ['u-lcm', 'LCM', 52, 40],
       ['u-rw', 'RW', 74, 14], ['u-st', 'ST', 70, 30], ['u-lw', 'LW', 76, 58],
     ]),
     theirs: squad([
@@ -193,7 +193,7 @@ const PACK = [
     ours: squad([
       ['u-gk', 'GK', 22, 34, 'keeper'],
       ['u-rb', 'RB', 82, 12], ['u-rcb', 'RCB', 62, 27], ['u-lcb', 'LCB', 62, 41], ['u-lb', 'LB', 74, 58],
-      ['u-dm', 'DM', 72, 34], ['u-rcm', 'RCM', 84, 28], ['u-lcm', 'LCM', 80, 44],
+      ['u-dm', 'DM', 70, 31], ['u-rcm', 'RCM', 84, 28], ['u-lcm', 'LCM', 80, 44],
       ['u-rw', 'RW', 96, 14], ['u-st', 'ST', 92, 33], ['u-lw', 'LW', 88, 50],
     ]),
     theirs: deepBlock,

@@ -142,7 +142,7 @@ const Board = {
 
   clearArrows() { this.layers.arrows.innerHTML = ''; },
 
-  arrow(from, to, label, cls, at = 0.5) {
+  arrow(from, to, label, cls, at = 0.5, meta = null) {
     const g = this.layers.arrows;
     const id = `ah-${cls}`;
     if (!this.svg.querySelector(`#${id}`)) {
@@ -158,6 +158,10 @@ const Board = {
     const a = { x: from.x + ux * 2.6, y: from.y + uy * 2.6 };
     const b = { x: to.x - ux * 3.1, y: to.y - uy * 3.1 };
     g.appendChild(el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: `route ${cls}`, 'marker-end': `url(#${id})` }));
+    // A 3-yard-wide transparent line over the top, so a fingertip can hit it.
+    const hit = el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'route-hit', 'data-route': cls });
+    if (meta) hit.setAttribute('data-meta', JSON.stringify(meta));
+    g.appendChild(hit);
     if (label) {
       const mx = a.x + (b.x - a.x) * at, my = a.y + (b.y - a.y) * at;
       const t = el('g', { transform: `translate(${mx} ${my})`, class: `route-tag ${cls}` });
@@ -212,6 +216,17 @@ function defensiveTargets(ball, carrier) {
       const ux = (carrier.x - d.x) / dd, uy = (carrier.y - d.y) / dd;
       tx = carrier.x - ux * 2.4;
       ty = carrier.y - uy * 2.4;
+    }
+    // Never occupy the same ground as an attacker. A defender marks from a
+    // body's distance; stacking two markers on one point is unreadable and
+    // wrongly reads as zero separation.
+    const MIN_GAP = 2.2;
+    for (const a of State.ours) {
+      const gap = Math.hypot(tx - a.x, ty - a.y);
+      if (gap < MIN_GAP && gap > 0.001) {
+        tx = a.x + ((tx - a.x) / gap) * MIN_GAP;
+        ty = a.y + ((ty - a.y) / gap) * MIN_GAP;
+      }
     }
     targets.set(d.id, { x: clamp(tx, 1, 104), y: clamp(ty, 1, 67) });
   }
@@ -355,12 +370,16 @@ const carrier = () => State.ours.find((p) => p.id === State.carrierId);
 const outfieldTeammates = () => State.ours.filter((p) => p.id !== State.carrierId);
 
 function refreshBoardState() {
-  Board.setCarrier(State.carrierId);
+  // While reviewing, the board is rewound to the opening picture, so the carrier
+  // shown must be the one who actually faced that decision.
+  const shownCarrierId = State.submitted ? State.scenario.startCarrier : State.carrierId;
+  Board.setCarrier(shownCarrierId);
   Board.setSelectable(State.submitted ? [] : outfieldTeammates().map((p) => p.id));
   const used = State.sequence.length;
   const max = State.scenario.maxActions || 5;
   $('#actionsUsed').textContent = `${used} / ${max}`;
-  $('#carrierLabel').textContent = carrier() ? carrier().pos : '—';
+  const shown = State.ours.find((p) => p.id === shownCarrierId);
+  $('#carrierLabel').textContent = shown ? shown.pos : '—';
   $('#finishBtn').disabled = State.submitted || used === 0;
   $('#undoBtn').disabled = State.submitted || used === 0;
   $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : 'Finish Sequence';
@@ -458,19 +477,98 @@ function finishSequence() {
 function drawPostSubmissionOptions() {
   Board.clearArrows();
   const first = State.sequence[0];
-  const from = State.ours.find((p) => p.id === first.from.id) || first.from;
-  // Re-create the opening picture so the options match the decision faced.
   const startOurs = State.scenario.ours.map((p) => ({ ...p }));
   const startTheirs = State.scenario.theirs.map((p) => ({ ...p }));
   const startCarrier = startOurs.find((p) => p.id === State.scenario.startCarrier);
   const ranked = rankOptions(startCarrier, startOurs, startTheirs);
 
-  if (ranked.primary) Board.arrow(startCarrier, ranked.primary.player, null, 'primary');
-  if (ranked.secondary) Board.arrow(startCarrier, ranked.secondary.player, null, 'secondary');
-  if (ranked.safety) Board.arrow(startCarrier, ranked.safety.player, null, 'safety');
-  Board.arrow(startCarrier, { x: first.to.x, y: first.to.y }, null, 'yours');
+  // Put every marker back where it stood when the decision was made. The options
+  // below describe THAT picture, and drawing them over the final, post-movement
+  // board made them point at space that is no longer open.
+  for (const p of State.ours) {
+    const home = State.scenario.ours.find((q) => q.id === p.id);
+    if (home) Board.move(p, home.x, home.y);
+  }
+  for (const p of State.theirs) {
+    const home = State.scenario.theirs.find((q) => q.id === p.id);
+    if (home) Board.move(p, home.x, home.y);
+  }
+  Board.moveBall(startCarrier.x, startCarrier.y);
+
+  const metaFor = (o) => o && ({
+    from: startCarrier.pos, to: o.player.pos, confidence: o.confidence,
+    passType: o.passTypeLabel, progression: o.progression, separation: o.effectiveSeparation,
+  });
+  if (ranked.primary) Board.arrow(startCarrier, ranked.primary.player, null, 'primary', 0.5, metaFor(ranked.primary));
+  if (ranked.secondary) Board.arrow(startCarrier, ranked.secondary.player, null, 'secondary', 0.5, metaFor(ranked.secondary));
+  if (ranked.safety) Board.arrow(startCarrier, ranked.safety.player, null, 'safety', 0.5, metaFor(ranked.safety));
+  Board.arrow(startCarrier, { x: first.to.x, y: first.to.y }, null, 'yours', 0.5, {
+    from: first.fromLabel, to: first.toLabel, confidence: first.result.confidence,
+    passType: first.result.passTypeLabel, progression: first.result.metrics.progression,
+    separation: first.result.metrics.effectiveSeparation, yours: true,
+  });
+  attachRouteHandlers();
   $('#routeKey').hidden = false;
   State._ranked = ranked;
+}
+
+/* ==================== Route explanations (tap or hold) ==================== */
+
+const ROUTE_MEANING = {
+  primary: {
+    name: 'Primary option',
+    what: 'The pass the engine rates highest overall.',
+    how: 'It blends how likely the ball was to arrive with how much the pass actually achieved — territory gained and opponents taken out of the game. It is not simply the safest ball.',
+  },
+  secondary: {
+    name: 'Secondary option',
+    what: 'The next best pass from the same picture.',
+    how: 'Usually genuinely defensible. Where the primary and secondary are close, either choice is good coaching and the difference is style, not correctness.',
+  },
+  safety: {
+    name: 'Safest option',
+    what: 'The pass most likely to simply arrive.',
+    how: 'Shown separately when it is not the primary — which is the whole point. The safest ball and the best ball are often different, and knowing when to take which is the skill.',
+  },
+  yours: {
+    name: 'Your pass',
+    what: 'The first pass you actually played.',
+    how: 'Compare its shape against the coloured routes. If yours sits on top of the primary, you saw what the engine saw.',
+  },
+};
+
+function showRouteDetail(cls, meta) {
+  const m = ROUTE_MEANING[cls];
+  if (!m) return;
+  const detail = meta ? `
+    <div class="route-facts">
+      <div><span>Pass</span><b>${meta.from} → ${meta.to}</b></div>
+      <div><span>Confidence</span><b>${meta.confidence}%</b></div>
+      <div><span>Delivery</span><b>${meta.passType}</b></div>
+      <div><span>Receiver keeps</span><b>${meta.separation} yd</b></div>
+      <div><span>Toward goal</span><b>${meta.progression > 0 ? '+' : ''}${meta.progression} yd</b></div>
+    </div>` : '';
+  openSheet(m.name, `
+    <p class="sheet-lead">${m.what}</p>
+    ${detail}
+    <h4>How it is chosen</h4><p>${m.how}</p>
+    <p class="sheet-foot">Confidence is a tactical estimate from the published scoring model, not a measured probability. Open Why Mode for the factors behind it.</p>`);
+}
+
+/** Every route line and every key swatch explains itself on tap or hold. */
+function attachRouteHandlers() {
+  $$('.route-hit', Board.svg).forEach((line) => {
+    const open = (e) => {
+      e.preventDefault();
+      const raw = line.getAttribute('data-meta');
+      showRouteDetail(line.dataset.route, raw ? JSON.parse(raw) : null);
+    };
+    line.onclick = open;
+    line.oncontextmenu = open;
+  });
+  $$('#routeKey span[data-route]').forEach((chip) => {
+    chip.onclick = () => showRouteDetail(chip.dataset.route, null);
+  });
 }
 
 /* ============================ Board input ============================ */
@@ -655,7 +753,7 @@ function renderAnalysis(a) {
 
     <section class="options">
       <h3>How the options ranked</h3>
-      <p class="options-note">From the opening picture. More than one of these is defensible — the ranking blends how likely the pass was to arrive with how much it actually achieved.</p>
+      <p class="options-note">The board above has been rewound to the opening picture, because these options describe the decision you faced <em>before</em> anyone moved. More than one is defensible — the ranking blends how likely the pass was to arrive with how much it actually achieved.</p>
       ${optionRow(ranked.primary, 'PRIMARY', 'primary')}
       ${optionRow(ranked.secondary, 'SECONDARY', 'secondary')}
       ${optionRow(ranked.safety, 'SAFETY', 'safety')}
@@ -668,8 +766,12 @@ function renderAnalysis(a) {
       }</ul>` : '<p class="empty">No concept evidence from this sequence.</p>'}
     </section>
 
+    <div class="analysis-actions analysis-actions-watch">
+      <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best route</button>
+    </div>
+    <p class="watch-hint">Tap any coloured line on the pitch — or a swatch in the key — to see that pass and its confidence.</p>
     <div class="analysis-actions">
-      <button class="btn btn-primary" id="retryBtn">Try this scenario again</button>
+      <button class="btn btn-ghost" id="retryBtn">Try this scenario again</button>
       <button class="btn btn-ghost" id="nextScenarioBtn">Next scenario</button>
     </div>
   `;
@@ -691,12 +793,49 @@ function renderAnalysis(a) {
     btn.setAttribute('aria-expanded', String(open));
     btn.classList.toggle('open', open);
   };
+  $('#watchBestBtn').onclick = playBestRoute;
   $('#retryBtn').onclick = () => loadScenario(State.scenario.id);
   $('#nextScenarioBtn').onclick = () => {
     const i = SCENARIOS.findIndex((s) => s.id === State.scenario.id);
     loadScenario(SCENARIOS[(i + 1) % SCENARIOS.length].id);
     window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
   };
+}
+
+/**
+ * Play the engine's recommended route as an animation, so the user can watch
+ * the ball travel and the defence react rather than reading a static arrow.
+ * Restores the opening picture and the arrows when it finishes.
+ */
+async function playBestRoute() {
+  const ranked = State._ranked;
+  if (!ranked || !ranked.primary || State.busy) return;
+
+  const btn = $('#watchBestBtn');
+  State.busy = true;
+  $('#board').classList.add('busy');
+  if (btn) { btn.disabled = true; btn.textContent = 'Playing…'; }
+
+  // Clear the arrows so nothing overlays the demonstration.
+  Board.clearArrows();
+  $('#routeKey').hidden = true;
+
+  const carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
+  const receiver = State.ours.find((p) => p.id === ranked.primary.player.id);
+  if (carrierNode && receiver) {
+    Board.setCarrier(carrierNode.id);
+    Board.moveBall(carrierNode.x, carrierNode.y);
+    await new Promise((r) => setTimeout(r, 450));
+    await animatePass(carrierNode, receiver, ranked.primary.passType);
+    Board.setCarrier(receiver.id);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+
+  // Put the opening picture back and restore the arrows.
+  drawPostSubmissionOptions();
+  State.busy = false;
+  $('#board').classList.remove('busy');
+  if (btn) { btn.disabled = false; btn.textContent = 'Watch the best route again'; }
 }
 
 /* ---------------------------- Profile ---------------------------- */

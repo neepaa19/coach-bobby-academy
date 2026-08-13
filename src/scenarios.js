@@ -67,7 +67,7 @@ export const SCENARIOS = [
       ['u-gk', 'GK', 8, 34, 'keeper'],
       ['u-rb', 'RB', 26, 8], ['u-rcb', 'RCB', 20, 26], ['u-lcb', 'LCB', 20, 42], ['u-lb', 'LB', 26, 60],
       ['u-dm', 'DM', 34, 34], ['u-rcm', 'RCM', 46, 22], ['u-lcm', 'LCM', 46, 46],
-      ['u-rw', 'RW', 62, 8], ['u-st', 'ST', 62, 34], ['u-lw', 'LW', 62, 60],
+      ['u-rw', 'RW', 62, 8], ['u-st', 'ST', 64, 30], ['u-lw', 'LW', 62, 60],
     ]),
     theirs: opp433HighPress,
   },
@@ -120,7 +120,7 @@ export const SCENARIOS = [
     ours: squad([
       ['u-gk', 'GK', 20, 34, 'keeper'],
       ['u-rb', 'RB', 76, 8], ['u-rcb', 'RCB', 58, 26], ['u-lcb', 'LCB', 58, 42], ['u-lb', 'LB', 70, 60],
-      ['u-dm', 'DM', 66, 34], ['u-rcm', 'RCM', 78, 22], ['u-lcm', 'LCM', 76, 44],
+      ['u-dm', 'DM', 64, 31], ['u-rcm', 'RCM', 78, 22], ['u-lcm', 'LCM', 76, 44],
       ['u-rw', 'RW', 86, 12], ['u-st', 'ST', 88, 33], ['u-lw', 'LW', 86, 55],
     ]),
     theirs: oppLowBlock,
