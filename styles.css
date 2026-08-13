@@ -500,3 +500,27 @@ body.no-action-bar { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .lib-dated { font-size: .78rem; color: var(--dim); margin-top: 4px; }
 .lib-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 5px; }
 .lib-list li { font-size: .88rem; color: var(--muted); }
+
+/* ---------------------------- Set Pieces ---------------------------- */
+.tabbar-5 { grid-template-columns: repeat(5, 1fr); }
+.tabbar-5 .tab { font-size: .66rem; }
+.sp-pitch { max-height: 62vh; }
+.sp-player .marker { stroke: rgba(0,0,0,.45); stroke-width: .25; }
+.sp-player .plabel { font-size: 1.6px; font-weight: 800; text-anchor: middle; fill: #06121f; pointer-events: none; }
+.sp-player .hit { fill: transparent; }
+.sp-run .marker { fill: #6fb4ff; stroke: rgba(255,255,255,.85); stroke-width: .3; cursor: grab; }
+.sp-def .marker { fill: #ffab7d; }
+.sp-gk .marker { fill: #ffe0cc; }
+.sp-def .plabel { fill: #3a1a06; }
+.sp-target { fill: rgba(53,211,165,.2); stroke: rgba(53,211,165,.8); stroke-width: .3; stroke-dasharray: 1 .8; }
+.sp-target-dot { fill: var(--accent); }
+.sp-flight { stroke: rgba(53,211,165,.5); stroke-width: .3; stroke-dasharray: 1.4 1.2; }
+.sp-controls { margin-top: 12px; }
+.sp-label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); margin-bottom: 6px; }
+.sp-select {
+  width: 100%; min-height: 48px; padding: 0 12px; border-radius: 12px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--line); color: var(--text);
+  font: inherit; font-size: .94rem;
+}
+.sp-blurb { margin-top: 10px; font-size: .86rem; color: var(--muted); }
+.sp-bar { display: block; }
