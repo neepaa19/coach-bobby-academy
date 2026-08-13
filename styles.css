@@ -523,4 +523,5 @@ body.no-action-bar { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
   font: inherit; font-size: .94rem;
 }
 .sp-blurb { margin-top: 10px; font-size: .86rem; color: var(--muted); }
-.sp-bar { display: block; }
+/* The hidden attribute must win over any display rule on these bars. */
+.action-bar[hidden] { display: none; }
