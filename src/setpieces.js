@@ -301,7 +301,36 @@ const Studio = {
   delivery: 'curled-far',
   result: null,
   svg: null,
+  history: [],
 };
+
+/* Dragging used to be destructive with no way back. Snapshot the shape
+   before anything moves it, cap the stack, and expose one Undo button. */
+const HISTORY_MAX = 25;
+
+function pushHistory() {
+  Studio.history.push(Studio.runners.map((r) => ({ id: r.id, role: r.role, x: r.x, y: r.y })));
+  if (Studio.history.length > HISTORY_MAX) Studio.history.shift();
+  syncUndo();
+}
+
+function undoStudio() {
+  const prev = Studio.history.pop();
+  if (!prev) return;
+  for (const saved of prev) {
+    const live = Studio.runners.find((r) => r.id === saved.id);
+    if (live) { live.x = saved.x; live.y = saved.y; }
+  }
+  Studio.result = null;
+  redraw();
+  renderResult();
+  syncUndo();
+}
+
+function syncUndo() {
+  const b = document.querySelector('#spUndo');
+  if (b) b.disabled = Studio.history.length === 0;
+}
 
 function loadSaved() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
@@ -380,6 +409,7 @@ function attachDrag() {
     const node = e.target.closest && e.target.closest('.sp-run');
     if (!node) return;
     dragging = Studio.runners.find((r) => r.id === node.dataset.id);
+    if (dragging) pushHistory();   // snapshot before the shape changes
     svg.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
@@ -441,6 +471,7 @@ function renderSaved() {
   $$('.sp-load', host).forEach((b) => {
     b.onclick = () => {
       const s = loadSaved()[Number(b.dataset.i)];
+      pushHistory();             // loading a saved routine is undoable too
       Studio.runners = s.runners.map((r) => ({ ...r }));
       Studio.delivery = s.delivery;
       Studio.result = null;
@@ -485,6 +516,7 @@ function render(host) {
       </div>
 
       <div class="row-actions">
+        <button class="btn btn-ghost" id="spUndo" disabled>Undo</button>
         <button class="btn btn-ghost" id="spReset">Reset shape</button>
         <button class="btn btn-ghost" id="spSave">Save routine</button>
       </div>
@@ -528,7 +560,9 @@ function render(host) {
     renderResult();
     updateDeliveryBlurb();
   };
+  $('#spUndo').onclick = undoStudio;
   $('#spReset').onclick = () => {
+    pushHistory();               // reset is undoable too
     Studio.runners = DEFAULT_RUNNERS();
     Studio.result = null;
     redraw();

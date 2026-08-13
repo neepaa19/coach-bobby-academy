@@ -16,8 +16,22 @@ import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+/** SVG element factory. The board is SVG, so this is the common case. */
 const el = (tag, attrs = {}, text) => {
   const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  return n;
+};
+
+/**
+ * HTML element factory. Separate from el() on purpose: an HTML tag built
+ * with createElementNS(SVG_NS, …) is a real element with the right class
+ * attribute, matches CSS selectors, and renders as absolutely nothing.
+ * That failure is silent, so the two factories stay visibly distinct.
+ */
+const htm = (tag, attrs = {}, text) => {
+  const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
   if (text != null) n.textContent = text;
   return n;
@@ -710,6 +724,13 @@ function renderAnalysis(a) {
       ${a.notes.map((n) => `<li class="note note-${n.tone}">${n.text}</li>`).join('')}
     </ul>
 
+    <div class="analysis-actions analysis-actions-watch">
+      <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best route</button>
+    </div>
+    <p class="watch-hint">Tap any coloured line on the pitch — or a swatch in the key — to see that pass and its confidence.</p>
+
+    <p class="reveal-lead">Three things sit underneath, in the order most people want them. Open only what you need.</p>
+
     <section class="why-block">
       <button class="why-toggle" id="whyToggle" aria-expanded="false">
         <span class="why-icon">?</span>
@@ -751,25 +772,33 @@ function renderAnalysis(a) {
       </div>
     </section>
 
-    <section class="options">
-      <h3>How the options ranked</h3>
-      <p class="options-note">The board above has been rewound to the opening picture, because these options describe the decision you faced <em>before</em> anyone moved. More than one is defensible — the ranking blends how likely the pass was to arrive with how much it actually achieved.</p>
-      ${optionRow(ranked.primary, 'PRIMARY', 'primary')}
-      ${optionRow(ranked.secondary, 'SECONDARY', 'secondary')}
-      ${optionRow(ranked.safety, 'SAFETY', 'safety')}
+    <section class="why-block">
+      <button class="why-toggle" id="optionsToggle" aria-expanded="false">
+        <span class="why-icon">⇄</span>
+        <span class="why-copy"><b>How the options ranked</b><em>${ranked.primary ? `The engine's first choice was ${ranked.primary.player.pos} at ${ranked.primary.confidence}%` : 'The alternatives you had at the moment of the decision'}</em></span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="why-body" id="optionsBody" hidden>
+        <p class="options-note">The board above has been rewound to the opening picture, because these options describe the decision you faced <em>before</em> anyone moved. More than one is defensible — the ranking blends how likely the pass was to arrive with how much it actually achieved.</p>
+        ${optionRow(ranked.primary, 'PRIMARY', 'primary')}
+        ${optionRow(ranked.secondary, 'SECONDARY', 'secondary')}
+        ${optionRow(ranked.safety, 'SAFETY', 'safety')}
+      </div>
     </section>
 
-    <section class="mastery-delta">
-      <h3>What this told the mastery model</h3>
-      ${a.concepts.length ? `<ul class="concept-list">${
-        a.concepts.map((c) => `<li class="${c.delta >= 0 ? 'pos' : 'neg'}"><b>${Mastery.CONCEPT_NAMES[c.concept] || c.concept}</b><em>${c.why}</em></li>`).join('')
-      }</ul>` : '<p class="empty">No concept evidence from this sequence.</p>'}
+    <section class="why-block">
+      <button class="why-toggle" id="masteryToggle" aria-expanded="false">
+        <span class="why-icon">◉</span>
+        <span class="why-copy"><b>What this told the mastery model</b><em>${a.concepts.length ? `${a.concepts.length} concept${a.concepts.length === 1 ? '' : 's'} moved on your profile` : 'No concept evidence from this sequence'}</em></span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="why-body" id="masteryBody" hidden>
+        ${a.concepts.length ? `<ul class="concept-list">${
+          a.concepts.map((c) => `<li class="${c.delta >= 0 ? 'pos' : 'neg'}"><b>${Mastery.CONCEPT_NAMES[c.concept] || c.concept}</b><em>${c.why}</em></li>`).join('')
+        }</ul>` : '<p class="empty">This sequence did not produce evidence for any tracked concept. That usually means it ended before the scenario\'s teaching moment.</p>'}
+      </div>
     </section>
 
-    <div class="analysis-actions analysis-actions-watch">
-      <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best route</button>
-    </div>
-    <p class="watch-hint">Tap any coloured line on the pitch — or a swatch in the key — to see that pass and its confidence.</p>
     <div class="analysis-actions">
       <button class="btn btn-ghost" id="retryBtn">Try this scenario again</button>
       <button class="btn btn-ghost" id="nextScenarioBtn">Next scenario</button>
@@ -786,13 +815,22 @@ function renderAnalysis(a) {
     };
   });
 
-  $('#whyToggle').onclick = () => {
-    const body = $('#whyBody'), btn = $('#whyToggle');
-    const open = body.hidden;
-    body.hidden = !open;
-    btn.setAttribute('aria-expanded', String(open));
-    btn.classList.toggle('open', open);
-  };
+  // One disclosure behaviour for all three sections, so they read as one system.
+  for (const [btnId, bodyId] of [
+    ['whyToggle', 'whyBody'],
+    ['optionsToggle', 'optionsBody'],
+    ['masteryToggle', 'masteryBody'],
+  ]) {
+    const btn = $('#' + btnId), body = $('#' + bodyId);
+    if (!btn || !body) continue;
+    btn.onclick = () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.classList.toggle('open', open);
+      if (open) btn.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
+    };
+  }
   $('#watchBestBtn').onclick = playBestRoute;
   $('#retryBtn').onclick = () => loadScenario(State.scenario.id);
   $('#nextScenarioBtn').onclick = () => {
@@ -849,6 +887,29 @@ function renderProfile() {
   $('#profileAttempts').textContent = p.attempts;
   $('#profileSolved').textContent = p.solved;
 
+  // A wall of zeros tells a new user nothing. Say what to do instead.
+  const fresh = p.attempts === 0;
+  const hero = $('.profile-hero');
+  if (hero) hero.classList.toggle('is-empty', fresh);
+  let starter = $('#profileStarter');
+  if (fresh) {
+    if (!starter) {
+      starter = htm('div', { class: 'starter', id: 'profileStarter' });
+      hero.appendChild(starter);
+    }
+    starter.innerHTML = `
+      <p><b>Nothing measured yet.</b> This profile is built entirely from sequences you finish — there is no starting score and nothing is assumed about you.</p>
+      <p>One scenario is enough to move six of these numbers. Start with <b>Build out against the press</b>: it tests the single skill everything else rests on, which is finding the free man before the ball reaches your feet.</p>
+      <button class="btn btn-primary" id="starterBtn">Play your first scenario</button>`;
+    $('#starterBtn').onclick = () => {
+      loadScenario(SCENARIOS[0].id);
+      switchTab('train');
+      window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    };
+  } else if (starter) {
+    starter.remove();
+  }
+
   $('#domainList').innerHTML = Mastery.DOMAINS.map((d) => {
     const v = Mastery.domainScore(p, d);
     const lvl = Mastery.levelFor(v);
@@ -872,7 +933,7 @@ function renderProfile() {
     ? `<p>Based on your evidence so far, these are the concepts to work on next:</p><ul>${
       weak.map((w) => `<li><b>${w.name}</b> — ${Math.round(w.value * 100)}% and rising only when you solve scenarios that actually test it.</li>`).join('')
     }</ul>`
-    : '<p>Play a scenario and finish the sequence — the profile fills in from the evidence your decisions produce.</p>';
+    : '<p class="empty">Nothing to recommend yet. Finish one sequence and this becomes a ranked list of the concepts your own decisions were weakest on.</p>';
 
   $('#badgeList').innerHTML = Mastery.BADGES.map((b) => {
     const earned = p.badges.includes(b.id);
@@ -886,7 +947,7 @@ function renderProfile() {
 
   $('#historyList').innerHTML = p.history.length
     ? p.history.slice(0, 8).map((h) => `<li><b>${h.title}</b><span class="h-${h.verdict}">${h.verdict}</span><em>${h.rating}</em></li>`).join('')
-    : '<li class="empty">Nothing yet.</li>';
+    : '<li class="empty">No sequences yet. Every one you finish is logged here with its verdict and rating, so you can see whether your reading is improving over weeks rather than guessing.</li>';
 }
 
 function showConceptDetail(id) {
@@ -1038,6 +1099,78 @@ function boot() {
   renderProfile();
   loadScenario(SCENARIOS[0].id);
   switchTab('train');
+  maybeShowFirstRun();
+}
+
+/* ------------------------- First run -------------------------
+ * A new user lands on a full 11v11 board with no idea that holding a
+ * player previews the pass. Three cards, once, dismissible, then never
+ * again. Not a help page — a help page is something you have to go find.
+ */
+const FIRST_RUN_KEY = 'cba.seenIntro.v1';
+
+const FIRST_RUN_CARDS = [
+  {
+    art: '⚽',
+    title: 'This is a decision, not a quiz',
+    body: 'You are the player on the ball. Pick where it goes. There is no single right answer hidden behind the screen — the engine scores whatever you choose against what was actually available.',
+  },
+  {
+    art: '👆',
+    title: 'Tap to pass, hold to look first',
+    body: 'Tap a teammate and the ball travels there. <b>Press and hold</b> instead and you get a preview: the confidence, the pass type, and how much space the receiver keeps when the ball arrives. Holding costs nothing.',
+  },
+  {
+    art: '▶',
+    title: 'Finish, then watch it back',
+    body: 'When you are done, hit <b>Finish Sequence</b>. You get a rating, the reasoning behind every percentage, and a replay of the route the engine would have played. Tap any line on the pitch to interrogate it.',
+  },
+];
+
+function maybeShowFirstRun() {
+  let seen = false;
+  try { seen = localStorage.getItem(FIRST_RUN_KEY) === '1'; } catch (_) { seen = false; }
+  if (seen) return;
+  showFirstRun();
+}
+
+function showFirstRun() {
+  let i = 0;
+  const host = htm('div', { class: 'intro', id: 'intro' });
+  host.innerHTML = `
+    <div class="intro-backdrop"></div>
+    <div class="intro-panel" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <div class="intro-art" id="introArt"></div>
+      <h2 id="introTitle"></h2>
+      <p id="introBody"></p>
+      <div class="intro-dots" id="introDots"></div>
+      <div class="intro-actions">
+        <button class="btn btn-ghost btn-sm" id="introSkip">Skip</button>
+        <button class="btn btn-primary" id="introNext">Next</button>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  document.body.classList.add('sheet-open');
+
+  const paint = () => {
+    const c = FIRST_RUN_CARDS[i];
+    $('#introArt', host).textContent = c.art;
+    $('#introTitle', host).textContent = c.title;
+    $('#introBody', host).innerHTML = c.body;
+    $('#introDots', host).innerHTML = FIRST_RUN_CARDS
+      .map((_, n) => `<i class="${n === i ? 'on' : ''}"></i>`).join('');
+    $('#introNext', host).textContent = i === FIRST_RUN_CARDS.length - 1 ? 'Start' : 'Next';
+  };
+
+  const done = () => {
+    try { localStorage.setItem(FIRST_RUN_KEY, '1'); } catch (_) { /* private mode — show again, no harm */ }
+    host.remove();
+    document.body.classList.remove('sheet-open');
+  };
+
+  $('#introNext', host).onclick = () => { i += 1; i >= FIRST_RUN_CARDS.length ? done() : paint(); };
+  $('#introSkip', host).onclick = done;
+  paint();
 }
 
 document.addEventListener('DOMContentLoaded', boot);

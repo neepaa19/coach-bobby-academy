@@ -407,6 +407,151 @@ export const LEAGUES = [
     ],
   },
   {
+    id: 'championship',
+    name: 'EFL Championship',
+    country: 'England',
+    tier: 2,
+    source: 'Club official announcements plus an independent outlet for every entry (BBC Sport, Sky Sports, local press); composition cross-checked against Sky Sports and West Brom’s published line-up',
+    confidence: 'All 24 confirmed against two or more independent sources',
+    note: 'Lincoln City genuinely run two head coaches, Chris Cohen and Tom Shaw, appointed jointly on 29 May 2026 after Michael Skubala left for Bristol City. Worth a warning for anyone re-checking this league: Wikipedia’s Championship tables returned stale names — it had Watford under Cioffi and Bristol City under Rosenior, both wrong. Promoted from League One: Bolton, Cardiff, Lincoln. Relegated from the Premier League: Burnley, West Ham, Wolves. Down to League One: Leicester, Oxford, Sheffield Wednesday.',
+    clubs: [
+      ['Birmingham City', 'Chris Davies'],
+      ['Blackburn Rovers', 'Tony Mowbray'],
+      ['Bolton Wanderers', 'Steven Schumacher'],
+      ['Bristol City', 'Michael Skubala'],
+      ['Burnley', 'Nicky Hayen'],
+      ['Cardiff City', 'Brian Barry-Murphy'],
+      ['Charlton Athletic', 'Nathan Jones'],
+      ['Derby County', 'John Eustace'],
+      ['Lincoln City', 'Chris Cohen & Tom Shaw'],
+      ['Middlesbrough', 'Kim Hellberg'],
+      ['Millwall', 'Alex Neil'],
+      ['Norwich City', 'Philippe Clement'],
+      ['Portsmouth', 'John Mousinho'],
+      ['Preston North End', 'Paul Heckingbottom'],
+      ['Queens Park Rangers', 'Julien Stéphan'],
+      ['Sheffield United', 'Chris Wilder'],
+      ['Southampton', 'Tonda Eckert'],
+      ['Stoke City', 'Mark Robins'],
+      ['Swansea City', 'Vítor Matos'],
+      ['Watford', 'Alessio Dionisi'],
+      ['West Bromwich Albion', 'James Morrison'],
+      ['West Ham United', 'Nuno Espírito Santo'],
+      ['Wolverhampton Wanderers', 'César Peixoto'],
+      ['Wrexham', 'Phil Parkinson'],
+    ],
+  },
+  {
+    id: 'eliteserien',
+    name: 'Eliteserien',
+    country: 'Norway',
+    tier: 1,
+    source: 'Club squad and staff pages plus VG, TV 2, Dagbladet and Fotmob',
+    confidence: 'All 16 confirmed against two or more independent sources',
+    note: 'This is a spring-to-autumn league, so August 2026 is mid-season and six clubs had already changed coach during it. The chain worth knowing: Alfred Johansson was sacked by Rosenborg in May and Freyr Alexandersson, sacked by Brann in June, took the Rosenborg job — while Brann hired Eirik Horneland from Saint-Étienne. Molde announced Sindre Tjelmeland in December but he could not start until 24 May. Kjetil Knutsen was linked with Strasbourg in July and stayed.',
+    clubs: [
+      ['Aalesund', 'Kjetil Rekdal'],
+      ['Bodø/Glimt', 'Kjetil Knutsen'],
+      ['Brann', 'Eirik Horneland'],
+      ['Fredrikstad', 'Casper Røjkjær'],
+      ['HamKam', 'Thomas Myhre'],
+      ['KFUM Oslo', 'Jørgen Isnes'],
+      ['Kristiansund', 'Amund Skiri'],
+      ['Lillestrøm', 'Hans Erik Ødegaard'],
+      ['Molde', 'Sindre Tjelmeland'],
+      ['Rosenborg', 'Freyr Alexandersson'],
+      ['Sandefjord', 'Andreas Tegström'],
+      ['Sarpsborg 08', 'Even Sel'],
+      ['Start', 'Azar Karadas'],
+      ['Tromsø', 'Jørgen Vik'],
+      ['Viking', 'Morten Jensen'],
+      ['Vålerenga', 'Johannes Moesgaard'],
+    ],
+  },
+  {
+    id: 'allsvenskan',
+    name: 'Allsvenskan',
+    country: 'Sweden',
+    tier: 1,
+    source: 'Club official pages plus allsvenskan.se, Fotbollskanalen, SVT and GP',
+    confidence: 'All 16 confirmed against two or more independent sources',
+    note: 'Mid-season, and volatile: five clubs changed coach during 2026. Two entries are honestly provisional and labelled that way — Stuart Baxter at Halmstad was described by the club chairman as an interim solution, and Joachim Björklund was promoted from assistant at IFK Göteborg on a tillsvidare (until-further-notice) basis. Malmö hired Gaute Helstrup away from Bodø/Glimt’s staff, which cross-checks against Norway.',
+    clubs: [
+      ['AIK', 'José Riveiro'],
+      ['BK Häcken', 'Jens Gustafsson'],
+      ['Degerfors IF', 'Henok Goitom'],
+      ['Djurgårdens IF', 'Jani Honkavaara'],
+      ['GAIS', 'Fredrik Holmberg'],
+      ['Halmstads BK', 'Stuart Baxter (interim)'],
+      ['Hammarby IF', 'Henrik Rydström'],
+      ['IF Brommapojkarna', 'Ulf Kristiansson'],
+      ['IF Elfsborg', 'Björn Hamberg'],
+      ['IFK Göteborg', 'Joachim Björklund'],
+      ['IK Sirius', 'Andreas Engelmark'],
+      ['Kalmar FF', 'Toni Koskela'],
+      ['Malmö FF', 'Gaute Helstrup'],
+      ['Mjällby AIF', 'Karl Marius Aksum'],
+      ['Västerås SK', 'Alexander Rubin'],
+      ['Örgryte IS', 'Andreas Holmberg'],
+    ],
+  },
+  {
+    id: 'ekstraklasa',
+    name: 'Ekstraklasa',
+    country: 'Poland',
+    tier: 1,
+    source: 'ekstraklasa.org club profiles and club official announcements, cross-checked against Sportowe Fakty, Interia and regional press',
+    confidence: 'All 18 confirmed against two or more independent sources',
+    note: 'Wieczysta Kraków are in the top flight for the first time in their history. Two coaches were already under public pressure in the opening weeks — Dawid Kroczek at Raków despite a contract to 2028, and Rafał Górak at GKS Katowice — so those are the entries most likely to change first.',
+    clubs: [
+      ['Cracovia', 'Bartosz Grzelak'],
+      ['GKS Katowice', 'Rafał Górak'],
+      ['Górnik Zabrze', 'Michal Gašparík'],
+      ['Jagiellonia Białystok', 'Adrian Siemieniec'],
+      ['Korona Kielce', 'Jacek Zieliński'],
+      ['Lech Poznań', 'Niels Frederiksen'],
+      ['Legia Warsaw', 'Marek Papszun'],
+      ['Motor Lublin', 'Mariusz Misiura'],
+      ['Piast Gliwice', 'Daniel Myśliwiec'],
+      ['Pogoń Szczecin', 'Óscar García Junyent'],
+      ['Radomiak Radom', 'Tomasz Kaczmarek'],
+      ['Raków Częstochowa', 'Dawid Kroczek'],
+      ['Śląsk Wrocław', 'Ante Šimundža'],
+      ['Widzew Łódź', 'Aleksandar Vuković'],
+      ['Wieczysta Kraków', 'Kazimierz Moskal'],
+      ['Wisła Kraków', 'Mariusz Jop'],
+      ['Wisła Płock', 'Adam Majewski'],
+      ['Zagłębie Lubin', 'Leszek Ojrzyński'],
+    ],
+  },
+  {
+    id: 'chanceliga',
+    name: 'Chance Liga',
+    country: 'Czechia',
+    tier: 1,
+    source: 'chanceliga.cz club pages and club official announcements, cross-checked against iSport, iRozhlas and regional Deník titles',
+    confidence: 'All 16 confirmed against two or more independent sources',
+    note: 'The sixteenth place is unusual: Artis Brno took it after Karviná dropped its appeal over match-fixing sanctions and Táborsko declined promotion, with Dukla Prague relegated and weighing legal action. Martin Hyský was still Plzeň’s coach on 13 August only because the owner overruled a sporting director who wanted him gone, so treat that entry as fragile.',
+    clubs: [
+      ['Artis Brno', 'Roman Nádvorník'],
+      ['Baník Ostrava', 'Roman Skuhravý'],
+      ['Bohemians 1905', 'Jaroslav Veselý'],
+      ['Hradec Králové', 'David Horejš'],
+      ['Jablonec', 'Luboš Kozel'],
+      ['Mladá Boleslav', 'Aleš Majer'],
+      ['Pardubice', 'Jan Trousil'],
+      ['Sigma Olomouc', 'Pavel Hapal'],
+      ['Slavia Prague', 'Jindřich Trpišovský'],
+      ['Slovácko', 'Jan Jelínek'],
+      ['Slovan Liberec', 'Branislav Fodrek'],
+      ['Sparta Prague', 'Brian Priske'],
+      ['Teplice', 'Zdenko Frťala'],
+      ['Viktoria Plzeň', 'Martin Hyský'],
+      ['Zbrojovka Brno', 'Martin Svědík'],
+      ['Zlín', 'Bronislav Červenka'],
+    ],
+  },
+  {
     id: 'mls',
     name: 'Major League Soccer',
     country: 'USA & Canada',
@@ -446,37 +591,107 @@ function leagueDetail(l) {
     <p class="sheet-foot">Source: ${esc(l.source)}. Managerial appointments change constantly — treat every name here as a snapshot taken on ${CHECKED}, not a permanent fact.</p>`;
 }
 
+function openLeague(l) {
+  $('#sheetTitle').textContent = `${l.name} — ${l.country}`;
+  $('#sheetBody').innerHTML = leagueDetail(l);
+  $('#sheet').hidden = false;
+  document.body.classList.add('sheet-open');
+}
+
+/* A flat index so one search box can answer "who coaches X" across every
+   league at once, which is the question people actually arrive with. */
+const INDEX = LEAGUES.flatMap((l) =>
+  l.clubs.map(([club, coach]) => ({ club, coach, league: l }))
+);
+
+const norm = (s) => String(s)
+  .toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // fold accents: "Sanchez" finds "Sánchez"
+  .replace(/[øØ]/g, 'o').replace(/[æÆ]/g, 'ae').replace(/[đĐ]/g, 'd').replace(/[łŁ]/g, 'l');
+
+function searchRows(q) {
+  const n = norm(q);
+  if (n.length < 2) return null;
+  return INDEX
+    .filter((r) => norm(r.club).includes(n) || (r.coach && norm(r.coach).includes(n)))
+    .slice(0, 40);
+}
+
+function cardFor(l) {
+  const known = l.clubs.filter(([, coach]) => coach).length;
+  return `
+    <button class="lesson lib-card" data-league="${l.id}">
+      <span class="lesson-kind">${esc(l.country)} · ${known}/${l.clubs.length} verified</span>
+      <span class="lesson-title">${esc(l.name)}</span>
+      <span class="lesson-go">Open →</span>
+    </button>`;
+}
+
 function render(host) {
   const c = counts();
+  const countries = new Set(LEAGUES.map((l) => l.country)).size;
+
+  // Tier 1 first, then alphabetical by country — 20 cards in source order
+  // is a pile; grouped and sorted it is a list you can scan.
+  const tiers = [...new Set(LEAGUES.map((l) => l.tier))].sort((a, b) => a - b);
+  const byTier = tiers.map((t) => ({
+    tier: t,
+    leagues: LEAGUES.filter((l) => l.tier === t)
+      .slice()
+      .sort((a, b) => a.country.localeCompare(b.country)),
+  }));
+
   const section = document.createElement('section');
   section.className = 'unit';
   section.innerHTML = `
     <h3>Coach directory</h3>
-    <p class="unit-blurb">Who is in charge where, for the 2026/27 season. ${c.known} clubs verified${c.unknown ? `, ${c.unknown} still open and honestly marked as such` : ' — every club in every league below, each name checked against two or more independent sources'}. Checked ${CHECKED}.</p>
-    <div class="lessons">
-      ${LEAGUES.map((l) => {
-        const known = l.clubs.filter(([, coach]) => coach).length;
-        return `
-        <button class="lesson lib-card" data-league="${l.id}">
-          <span class="lesson-kind">${esc(l.country)} · ${known}/${l.clubs.length} verified</span>
-          <span class="lesson-title">${esc(l.name)}</span>
-          <span class="lesson-go">Open →</span>
-        </button>`;
-      }).join('')}
+    <p class="unit-blurb">Who is in charge where, for the 2026/27 season. ${c.known} clubs across ${LEAGUES.length} leagues and ${countries} countries${c.unknown ? `, with ${c.unknown} still open and honestly marked as such` : ' — every one checked against two or more independent sources'}. Checked ${CHECKED}.</p>
+
+    <div class="dir-search">
+      <input type="search" id="dirSearch" placeholder="Search a club or a coach" autocomplete="off"
+             aria-label="Search the coach directory by club or coach name" />
     </div>
-    <p class="dir-foot">Next up: English tiers 2 and 3, Norway, Sweden, Poland, Czechia, Croatia and Serbia, then the rest of MLS. The goal is tiers 1–3 of every European country. This list grows every session rather than pretending to be complete.</p>`;
+    <div id="dirResults" class="dir-results" hidden></div>
+
+    <div id="dirBrowse">
+      ${byTier.map((g) => `
+        <p class="dir-tier">${g.tier === 1 ? 'Top flight' : `Tier ${g.tier}`}</p>
+        <div class="lessons">${g.leagues.map(cardFor).join('')}</div>`).join('')}
+    </div>
+
+    <p class="dir-foot">Next up: English League One, Croatia, Serbia, Ukraine, Romania and Hungary, then the rest of MLS. The goal is tiers 1–3 of every European country. This list grows every session rather than pretending to be complete.</p>`;
 
   host.appendChild(section);
 
   $$('.lib-card[data-league]', section).forEach((b) => {
-    b.onclick = () => {
-      const l = LEAGUES.find((x) => x.id === b.dataset.league);
-      $('#sheetTitle').textContent = `${l.name} — ${l.country}`;
-      $('#sheetBody').innerHTML = leagueDetail(l);
-      $('#sheet').hidden = false;
-      document.body.classList.add('sheet-open');
-    };
+    b.onclick = () => openLeague(LEAGUES.find((x) => x.id === b.dataset.league));
   });
+
+  const input = $('#dirSearch', section);
+  const results = $('#dirResults', section);
+  const browse = $('#dirBrowse', section);
+
+  input.oninput = () => {
+    const rows = searchRows(input.value);
+    if (!rows) {
+      results.hidden = true;
+      browse.hidden = false;
+      return;
+    }
+    browse.hidden = true;
+    results.hidden = false;
+    results.innerHTML = rows.length
+      ? `<p class="dir-count">${rows.length}${rows.length === 40 ? '+' : ''} match${rows.length === 1 ? '' : 'es'}</p>
+         <ul class="dir-list">${rows.map((r) => `
+           <li class="dir-row dir-hit" data-league="${r.league.id}">
+             <span class="dir-club">${esc(r.club)}<em>${esc(r.league.name)}</em></span>
+             <span class="dir-coach">${r.coach ? esc(r.coach) : 'Not verified'}</span>
+           </li>`).join('')}</ul>`
+      : `<p class="empty">Nothing for “${esc(input.value)}”. This directory covers ${LEAGUES.length} leagues so far — if the club is in a league not yet listed, it genuinely is not here rather than misfiled.</p>`;
+    $$('.dir-hit', results).forEach((row) => {
+      row.onclick = () => openLeague(LEAGUES.find((x) => x.id === row.dataset.league));
+    });
+  };
 }
 
 function install() {
