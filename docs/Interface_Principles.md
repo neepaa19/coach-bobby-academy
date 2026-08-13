@@ -75,24 +75,47 @@ screen should mirror position in the user's mental model.
 
 ---
 
-## Where this app currently falls short
+## Fixed — 13 August 2026
+
+Each of these was on the shortfall list below. Each is now covered by an
+assertion in `tests/smoke.mjs`, so it cannot quietly regress.
+
+1. **Density.** ~~The analysis panel presents everything in one column.~~ The panel
+   now lands as verdict, stats, notes, and the one action worth taking next
+   (*Watch the best route*). Why Mode, the ranked options and the mastery evidence
+   sit below as three closed disclosures using one shared component. Guarded by
+   `allDisclosuresClosedOnArrival` and `watchActionBeforeTheDeepStuff`.
+2. **First run has no orientation.** ~~A new user lands on a full tactical board.~~
+   Three cards, shown once, dismissible, remembered: what the app is, that holding
+   a player previews the pass, and what Finish does. Guarded by
+   `introShownOnFirstRun`, `introDismissed`, `introStaysDismissed`.
+3. **Empty states are thin.** ~~The profile before any play is a row of zeros.~~ It
+   now names the first scenario to play and why, with a button that goes there.
+   Recommendations and history say what will fill them. Guarded by
+   `emptyProfileExplainsItself`.
+4. **Set-piece studio has no undo.** ~~Dragging is destructive.~~ A 25-deep history
+   snapshots before every drag, every reset and every routine load. Guarded by
+   `undoDisabledBeforeAnyDrag`, `dragMovedRunner`, `undoRestoresShape`.
+
+A fifth problem surfaced while fixing these and is worth recording because it
+is the kind that hides: the app has one element factory, and it builds SVG. An
+HTML overlay built with it produced a real element, with the right classes,
+matching every CSS selector, that rendered as absolutely nothing. There are now
+two factories with different names, and a comment explaining why.
+
+## Where this app still falls short
 
 Written down honestly so it can be fixed rather than forgotten.
 
-1. **Density.** The analysis panel presents verdict, four stats, notes, Why Mode,
-   ranked options and mastery evidence in one column. That's a lot to land at once.
-   It should reveal progressively — verdict first, detail on demand.
-2. **The board is small on a phone.** The pitch has to fit 22 players in roughly a
+1. **The board is small on a phone.** The pitch has to fit 22 players in roughly a
    390×250 area. Position labels are near the legibility floor. Worth exploring a
    pinch-to-zoom or a tap-to-enlarge board.
-3. **First run has no orientation.** A new user lands on a full tactical board with
-   no idea that holding a player previews the pass. Needs a genuine first-run
-   moment, not a help page.
-4. **Empty states are thin.** The profile before any play is a row of zeros. It
-   should say what to do next.
-5. **No haptics.** iOS Safari supports limited haptic feedback; a tick on a
-   successful pass would make the board feel physical.
-6. **Set-piece studio has no undo.** Dragging is destructive with no way back.
+2. **No haptics.** iOS Safari's support is limited and inconsistent; a tick on a
+   successful pass would make the board feel physical, but it may not be reachable
+   from a web app at all. Needs testing on a real device before it is promised.
+3. **The directory search only matches text.** Typing a coach's former club finds
+   nothing. A "where did this coach come from" view would be more useful than a
+   better matcher.
 
 ---
 
