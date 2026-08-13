@@ -1,3 +1,12 @@
+
+/* ---------------------------- Coach directory ---------------------------- */
+.dir-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
+.dir-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline; padding: 9px 11px; border-radius: 9px; background: rgba(255,255,255,.04); font-size: .86rem; }
+.dir-club { color: var(--muted); }
+.dir-coach { font-weight: 650; text-align: right; }
+.dir-unknown .dir-coach { color: var(--dim); font-weight: 400; font-style: italic; }
+.dir-note { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,194,71,.09); border-left: 3px solid var(--warn); font-size: .84rem; color: var(--muted); }
+.dir-foot { margin-top: 12px; font-size: .78rem; color: var(--dim); }
 /* Coach Bobby Academy — mobile-first styling.
    Designed for iPhone Safari portrait first, then widened for tablet/desktop. */
 
