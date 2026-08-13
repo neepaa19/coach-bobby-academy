@@ -21,6 +21,14 @@
   <span id="stateBadge" class="badge badge-live">Your move</span>
 </header>
 
+<!-- Persistent primary action. Always visible, never hidden behind a gesture.
+     Declared before <main> so it stays the first .action-bar in document order:
+     feature modules append their own bars later, and app.js must keep
+     targeting this one. -->
+<div class="action-bar">
+  <button class="btn btn-finish" id="finishBtn" disabled>Finish Sequence</button>
+</div>
+
 <main>
 
   <!-- ============================ TRAIN ============================ -->
@@ -143,11 +151,6 @@
 
 </main>
 
-<!-- Persistent primary action. Always visible, never hidden behind a gesture. -->
-<div class="action-bar">
-  <button class="btn btn-finish" id="finishBtn" disabled>Finish Sequence</button>
-</div>
-
 <nav class="tabbar">
   <button class="tab active" data-tab="train"><span class="tab-ico">⚽</span>Train</button>
   <button class="tab" data-tab="learn"><span class="tab-ico">▦</span>Curriculum</button>
@@ -168,6 +171,7 @@
 <div id="scenarioPickerHost" hidden><div id="scenarioPicker" class="picker"></div></div>
 <div id="toast" class="toast" hidden></div>
 
+<script type="module" src="./src/scenario-pack-2.js"></script>
 <script type="module" src="./src/app.js"></script>
 <script type="module" src="./src/library.js"></script>
 <script type="module" src="./src/setpieces.js"></script>
