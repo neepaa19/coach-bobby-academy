@@ -878,3 +878,22 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
 @media (max-width: 700px) {
   .checklist { display: grid; grid-template-columns: auto auto; gap: 3px 12px; }
 }
+
+/* Goals and the off-screen goal marker */
+.goal-net { fill: rgba(255,255,255,.18); stroke: #ffffff; stroke-width: .35; }
+.board { position: relative; }
+.goal-hint {
+  position: absolute; z-index: 2; pointer-events: none;
+  font-size: .72rem; font-weight: 750; color: #fff;
+  background: rgba(6,18,31,.78); border: 1px solid rgba(255,255,255,.35);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+.goal-hint.vertical { top: 6px; left: 50%; transform: translateX(-50%); }
+.goal-hint.horizontal { right: 6px; top: 50%; transform: translateY(-50%); }
+.goal-hint[hidden] { display: none; }
+@media (max-width: 700px) {
+  .goal-status.mission { flex-direction: column; align-items: stretch; gap: 4px; }
+  .checklist { grid-template-columns: 1fr 1fr; }
+  .goal-status.mission span.mission-left { display: flex; justify-content: space-between; }
+  .goal-status.mission span.mission-left br { display: none; }
+}

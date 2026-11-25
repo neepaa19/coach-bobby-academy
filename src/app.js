@@ -125,11 +125,18 @@ const Board = {
     this.layers.ball = el('g', { class: 'l-ball' });
     Object.values(this.layers).forEach((l) => root.appendChild(l));
     container.appendChild(svg);
+    const hint = document.createElement('div');
+    hint.id = 'goalHint';
+    hint.className = `goal-hint ${this.orientName}`;
+    hint.hidden = true;
+    container.appendChild(hint);
   },
 
   setView(view) {
     this.view = view;
     this.svg.setAttribute('viewBox', this.orient.view(view));
+    const hint = document.getElementById('goalHint');
+    if (hint) hint.hidden = view.x + view.w >= 104;
   },
 
   drawPitch() {
@@ -147,6 +154,9 @@ const Board = {
     line({ x: 99.1, y: 24.85, width: 5.5, height: 18.3 });
     g.appendChild(el('circle', { cx: 11, cy: 34, r: 0.4, fill: 'var(--pitch-line)' }));
     g.appendChild(el('circle', { cx: 94, cy: 34, r: 0.4, fill: 'var(--pitch-line)' }));
+    // The goals, 8 yd wide, sitting behind each goal line.
+    g.appendChild(el('rect', { x: -2, y: 30, width: 2, height: 8, class: 'goal-net ours' }));
+    g.appendChild(el('rect', { x: 105, y: 30, width: 2, height: 8, class: 'goal-net theirs' }));
   },
 
   drawZone(zone) {
@@ -429,6 +439,9 @@ function fitView(s, players) {
     x1 = Math.max(x1, z.x + z.w + 2); y1 = Math.max(y1, z.y + z.h + 2);
   }
   x0 = clamp(x0, 0, 105); x1 = clamp(x1, 0, 105);
+  // When the view reaches either end, show the goal behind the line too.
+  if (x0 <= 1) x0 = -2.6;
+  if (x1 >= 104) x1 = 107.6;
   y0 = clamp(y0, 0, 68); y1 = clamp(y1, 0, 68);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
@@ -547,6 +560,9 @@ function refreshBoardState() {
   $('#finishBtn').classList.remove('confirm');
   renderGoalStatus();
   refreshShootButton();
+  const gh = $('#goalHint');
+  const cc = State.ours.find((p) => p.id === shownCarrierId);
+  if (gh && cc) gh.textContent = `${Board.orient.arrow} Their goal · ${Math.round(distanceToGoal(cc))} yd from the ball`;
   $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'In progress';
   $('#stateBadge').className = `badge ${State.submitted ? 'badge-review' : 'badge-live'}`;
   $('.action-bar').hidden = State.submitted;
