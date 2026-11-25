@@ -735,3 +735,16 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
 .best-note { font-size: .8rem; color: var(--warn); margin-bottom: 10px; }
 .best-foot { font-size: .74rem; color: var(--dim); margin-top: 8px; }
 .btn-block { width: 100%; }
+
+/* Dribble mode: the reachable area is drawn around the player on the ball. */
+.carry-ring { fill: rgba(255,255,255,.07); stroke: rgba(255,255,255,.75); stroke-width: .3; stroke-dasharray: 1.2 .9; pointer-events: none; }
+.board.carry-mode { outline: 2px solid rgba(255,255,255,.55); outline-offset: -2px; cursor: crosshair; }
+
+@media (max-width: 700px) {
+  /* One line of status on a phone; the detail lives in the legend and the toast. */
+  .goal-status { padding: 6px 10px; }
+  .goal-status span { display: none; }
+  .goal-status b { font-size: .8rem; }
+  .board-meta { margin-bottom: 4px; }
+  .pitch { max-height: calc(100svh - 395px); }
+}

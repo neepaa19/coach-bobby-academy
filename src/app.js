@@ -7,7 +7,7 @@
  */
 
 import {
-  evaluatePass, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
+  evaluatePass, evaluateCarry, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
   distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
 import { bestSequence } from './planner.js';
@@ -116,6 +116,7 @@ const Board = {
     this.root = root;
     this.layers.pitch = el('g', { class: 'l-pitch' });
     this.layers.zones = el('g', { class: 'l-zones' });
+    this.layers.carry = el('g', { class: 'l-carry' });
     this.layers.arrows = el('g', { class: 'l-arrows' });
     this.layers.theirs = el('g', { class: 'l-theirs' });
     this.layers.ours = el('g', { class: 'l-ours' });
@@ -228,6 +229,23 @@ const Board = {
     }
   },
 
+  /** Pitch coordinates (yards) of a screen tap, whatever the orientation. */
+  toPitch(clientX, clientY) {
+    const pt = this.svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const m = this.root.getScreenCTM();
+    if (!m) return null;
+    const q = pt.matrixTransform(m.inverse());
+    return { x: q.x, y: q.y };
+  },
+
+  showCarryRange(center, r) {
+    const g = this.layers.carry;
+    g.innerHTML = '';
+    if (!center) return;
+    g.appendChild(el('circle', { cx: center.x, cy: center.y, r, class: 'carry-ring' }));
+  },
+
   setSelectable(ids) {
     $$('.player', this.svg).forEach((n) => n.classList.toggle('selectable', ids.includes(n.dataset.id)));
   },
@@ -265,7 +283,8 @@ const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
  * never presented mid-animation.
  */
 function animatePass(from, to, passType) {
-  const travelMs = clamp((dist(from, to) / SPEED[passType]) * 1000, 420, 1500);
+  const carry = from.id === to.id;
+  const travelMs = clamp((dist(from, to) / SPEED[passType]) * 1000, 420, carry ? 3200 : 1500);
   const settleMs = 520;
   const total = travelMs + settleMs;
 
@@ -310,11 +329,14 @@ function animatePass(from, to, passType) {
       }
       for (const p of State.ours) {
         const s = startPos.get(p.id), t = supTargets.get(p.id);
-        if (t) Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
+        if (!t) continue;
+        // On a carry the runner moves with the ball, not with the team's lag.
+        if (carry && p.id === to.id) Board.move(p, s.x + (t.x - s.x) * be, s.y + (t.y - s.y) * be);
+        else Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
       }
 
       if (elapsed < total) requestAnimationFrame(tick);
-      else { Board.moveBall(to.x, to.y); resolve(); }
+      else { if (carry) { const c = State.ours.find((p) => p.id === to.id); Board.move(c, to.x, to.y); } Board.moveBall(to.x, to.y); resolve(); }
     };
     requestAnimationFrame(tick);
   });
@@ -341,6 +363,7 @@ function loadScenario(id) {
   State.startBall = { x: sc.x, y: sc.y };
   resetReasons();
   State.best = null;
+  State.carryMode = false;
   if ($('#boardCaption')) $('#boardCaption').hidden = true;
   State.sequence = [];
   State.submitted = false;
@@ -425,16 +448,16 @@ function renderGoalStatus() {
   if (State.submitted) { box.hidden = true; return; }
   box.hidden = false;
   if (!State.sequence.length) {
-    html = `<b>🎯 ${goal}</b><span>You have up to ${max} passes. Most solutions need more than one.</span>`;
+    html = `<b>🎯 ${goal} · up to ${max} actions</b><span>Pass or dribble. Most solutions need more than one action.</span>`;
   } else if (goalMet()) {
     cls = 'met';
     html = `<b>✓ Goal reached</b><span>Finish now, or keep going if you can improve the position.</span>`;
   } else if (left > 0) {
     cls = 'open';
-    html = `<b>Not there yet · ${left} pass${left === 1 ? '' : 'es'} left</b><span>${goal}.</span>`;
+    html = `<b>Not there yet · ${left} action${left === 1 ? '' : 's'} left</b><span>${goal}. Pass, or tap the player on the ball to dribble.</span>`;
   } else {
     cls = 'out';
-    html = `<b>No passes left</b><span>The goal was not reached. Finish to see how you did and watch the best sequence.</span>`;
+    html = `<b>No actions left</b><span>The goal was not reached. Finish to see how you did and watch the best sequence.</span>`;
   }
   box.className = `goal-status ${cls}`;
   box.innerHTML = html;
@@ -454,6 +477,7 @@ function refreshBoardState() {
   $('#finishBtn').disabled = State.submitted || used === 0;
   $('#undoBtn').disabled = State.submitted || used === 0;
   State.confirmFinish = false;
+  if (State.carryMode && (State.submitted || State.busy)) setCarryMode(false);
   const met = goalMet();
   $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : met ? 'Finish sequence ✓' : 'Finish sequence';
   $('#finishBtn').classList.toggle('goal-met', met && !State.submitted);
@@ -497,6 +521,62 @@ async function playPass(receiver, passType) {
   renderSequence();
 }
 
+/* ------------------------------ Carrying ------------------------------ */
+
+const CARRY_MAX = 15; // yards per carry: beyond that it is a solo run, not a carry
+
+function setCarryMode(on) {
+  State.carryMode = on && !State.submitted && !State.busy;
+  const c = carrier();
+  Board.showCarryRange(State.carryMode ? c : null, CARRY_MAX);
+  $('#board').classList.toggle('carry-mode', State.carryMode);
+  if (State.carryMode) toast('Dribble: tap where he should run with the ball (up to 15 yd). Tap him again to cancel.');
+}
+
+async function playCarry(point) {
+  if (State.busy || State.submitted) return;
+  const max = State.scenario.maxActions || 5;
+  if (State.sequence.length >= max) {
+    toast(`That is the action limit for this scenario (${max}). Finish the sequence to see the analysis.`);
+    return;
+  }
+  const from = carrier();
+  // Clamp to range and pitch, and stop short of running into an opponent.
+  let dx = point.x - from.x, dy = point.y - from.y;
+  let d = Math.hypot(dx, dy);
+  if (d < 2) { setCarryMode(false); return; }
+  if (d > CARRY_MAX) { dx *= CARRY_MAX / d; dy *= CARRY_MAX / d; d = CARRY_MAX; }
+  let dest = { x: clamp(from.x + dx, 1.5, 103.5), y: clamp(from.y + dy, 1.5, 66.5) };
+  for (const o of State.theirs) {
+    const gap = dist(dest, o);
+    if (gap < 2.6) {
+      const back = Math.max(0, dist(from, dest) - (2.6 - gap));
+      const dd = dist(from, dest) || 1;
+      dest = { x: from.x + ((dest.x - from.x) / dd) * back, y: from.y + ((dest.y - from.y) / dd) * back };
+    }
+  }
+  const result = evaluateCarry(from, dest, { defenders: State.theirs });
+  setCarryMode(false);
+  State.busy = true;
+  $('#board').classList.add('busy');
+  hidePreview();
+  const fromSnapshot = { x: from.x, y: from.y, id: from.id, pos: from.pos };
+  const target = { ...from, x: dest.x, y: dest.y };
+  await animatePass(from, target, 'carry');
+  State.sequence.push({
+    kind: 'carry',
+    from: fromSnapshot,
+    to: { x: dest.x, y: dest.y, id: from.id, pos: from.pos },
+    fromLabel: from.pos,
+    toLabel: from.pos,
+    result,
+  });
+  State.busy = false;
+  $('#board').classList.remove('busy');
+  refreshBoardState();
+  renderSequence();
+}
+
 function undo() {
   if (!State.sequence.length || State.submitted) return;
   State.sequence.pop();
@@ -515,7 +595,8 @@ function undo() {
   Board.drawBall({ x: c0.x, y: c0.y });
   for (const step of replay) {
     const rec = State.ours.find((p) => p.id === step.to.id);
-    const plan = planReaction(carrier(), rec, step.result.passType);
+    const target = step.kind === 'carry' ? { ...rec, x: step.to.x, y: step.to.y } : rec;
+    const plan = planReaction(carrier(), target, step.result.passType);
     const defTargets = plan.theirs;
     const supTargets = plan.ours;
     for (const p of State.theirs) { const t = defTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
@@ -707,6 +788,14 @@ function attachBoardHandlers() {
       return;
     }
     if (State.submitted) return;
+    const tapped = playerFromEvent(e);
+    if (tapped && tapped.id === State.carrierId) { setCarryMode(!State.carryMode); return; }
+    if (State.carryMode && !tapped) {
+      const pt = Board.toPitch(e.clientX, e.clientY);
+      if (pt) playCarry(pt);
+      return;
+    }
+    if (State.carryMode && tapped) setCarryMode(false);
     const wasHold = pressTimer === null && previewOpen;
     clearTimeout(pressTimer);
     if (wasHold) { pressTarget = null; return; }
@@ -817,13 +906,13 @@ function renderScenarioHeader() {
 function renderSequence() {
   const wrap = $('#sequence');
   if (!State.sequence.length) {
-    wrap.innerHTML = '<p class="empty">Tap a teammate to play a pass. Hold a teammate to preview the pass before you commit to it.</p>';
+    wrap.innerHTML = '<p class="empty">Tap a teammate to pass. Hold a teammate to preview the pass. Tap the player on the ball, then tap open grass, to dribble into space.</p>';
     return;
   }
   wrap.innerHTML = State.sequence.map((s, i) => `
     <div class="seq-step">
       <span class="seq-n">${i + 1}</span>
-      <span class="seq-body"><b>${s.fromLabel} → ${s.toLabel}</b><em>${s.result.passTypeLabel}</em></span>
+      <span class="seq-body"><b>${s.kind === 'carry' ? `${s.fromLabel} runs ${s.result.metrics.passDistance} yd` : `${s.fromLabel} → ${s.toLabel}`}</b><em>${s.result.passTypeLabel}</em></span>
       <span class="seq-pct${s.result.confidence < 45 ? ' risky' : ''}">${State.submitted ? s.result.confidence + '%' : '•'}</span>
     </div>`).join('');
 }
@@ -834,7 +923,7 @@ function earlyStopNote(a) {
   const n = State.sequence.length;
   if (a.verdict === 'success' || n >= max) return '';
   const left = max - n;
-  return `<li class="note note-warn"><b>You stopped after ${n} pass${n === 1 ? '' : 'es'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
+  return `<li class="note note-warn"><b>You stopped after ${n} action${n === 1 ? '' : 's'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
 }
 
 /** The engine's best full sequence from the opening picture, next to yours. */
@@ -903,8 +992,10 @@ function renderAnalysis(a) {
         <p class="why-scope">This explains <b>each individual pass</b> you played, then the sequence as a whole. Percentages are tactical estimates produced by the published scoring model — not measured probabilities.</p>
         ${State.sequence.map((s, i) => `
           <div class="why-pass">
-            <h4>Pass ${i + 1}: ${s.fromLabel} → ${s.toLabel} <span class="why-pct">${s.result.confidence}%</span></h4>
-            <p class="why-type">${s.result.passTypeLabel} · ${s.result.metrics.passDistance} yd at ${speed(SPEED[s.result.passType])} · ${s.result.metrics.travelTime}s travel · receiver keeps ${s.result.metrics.effectiveSeparation} yd</p>
+            <h4>${s.kind === 'carry' ? `Action ${i + 1}: ${s.fromLabel} runs with the ball` : `Action ${i + 1}: ${s.fromLabel} → ${s.toLabel}`} <span class="why-pct">${s.result.confidence}%</span></h4>
+            <p class="why-type">${s.kind === 'carry'
+              ? `Carry · ${s.result.metrics.passDistance} yd at ${speed(SPEED.carry)} · ${s.result.metrics.travelTime}s · about ${s.result.metrics.effectiveSeparation} yd of space when he arrives`
+              : `${s.result.passTypeLabel} · ${s.result.metrics.passDistance} yd at ${speed(SPEED[s.result.passType])} · ${s.result.metrics.travelTime}s travel · receiver keeps ${s.result.metrics.effectiveSeparation} yd`}</p>
             <ul class="factors">
               ${s.result.factors.map((f) => `
                 <li class="${f.points >= 0 ? 'pos' : 'neg'}">
@@ -1034,12 +1125,15 @@ async function playBestSequence() {
 
   for (let i = 0; i < b.sequence.length; i++) {
     const st = b.sequence[i];
-    const receiver = State.ours.find((p) => p.id === st.to.id);
+    const node = State.ours.find((p) => p.id === st.to.id);
+    const receiver = st.kind === 'carry' ? { ...node, x: st.to.x, y: st.to.y } : node;
     cap.hidden = false;
-    cap.innerHTML = `<b>Pass ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
+    cap.innerHTML = st.kind === 'carry'
+      ? `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} runs ${st.result.metrics.passDistance} yd with the ball · ${st.result.confidence}%`
+      : `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
     await animatePass(carrierNode, receiver, st.result.passType);
-    Board.setCarrier(receiver.id);
-    carrierNode = receiver;
+    Board.setCarrier(node.id);
+    carrierNode = node;
     await new Promise((r) => setTimeout(r, 650));
   }
   cap.innerHTML = b.objectiveMet ? '<b>✓ Objective reached</b> That is the best sequence the engine found.' : '<b>End of the best sequence</b> The closest the engine got to the goal.';

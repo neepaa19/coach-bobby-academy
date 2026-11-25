@@ -23,7 +23,23 @@ export const SPEED = {
   chip: 12,
   defenderRecovery: 6.4,
   playerJog: 4.2,
+  carry: 5.2,          // running with the ball at match speed
 };
+
+/*
+ * How far a player really gets in `t` seconds. Nobody reacts instantly
+ * or starts at top speed: about a third of a second to read the pass,
+ * then roughly a second to accelerate. Used by both the scoring and the
+ * movement, so the board and the percentages always agree.
+ */
+export const REACTION_TIME = 0.35;
+export const ACCEL_TIME = 1.0;
+export function runDistance(t, topSpeed) {
+  const go = t - REACTION_TIME;
+  if (go <= 0) return 0;
+  if (go <= ACCEL_TIME) return 0.5 * topSpeed * (go * go) / ACCEL_TIME;
+  return topSpeed * (go - ACCEL_TIME / 2);
+}
 
 /*
  * WEIGHTS — the published scoring model.
@@ -93,7 +109,7 @@ export function nearestDefender(point, defenders) {
  */
 export function effectiveSeparation(receiver, defenders, travelTime) {
   const { defender, distance } = nearestDefender(receiver, defenders);
-  const closing = SPEED.defenderRecovery * travelTime;
+  const closing = runDistance(travelTime, SPEED.defenderRecovery);
   // A defender only closes the gap he is actually oriented to close.
   // Ball-side defenders recover faster than those behind the receiver.
   const behind = defender && defender.x < receiver.x ? 0.75 : 1;
@@ -271,6 +287,94 @@ export function evaluatePass(from, to, ctx) {
   };
 }
 
+/*
+ * CARRY_WEIGHTS — running with the ball. Same idea as passing: a base,
+ * then named factors with fixed maximum influence.
+ */
+export const CARRY_WEIGHTS = {
+  base: 76,
+  space: 16,      // room at the destination when he gets there
+  path: 34,       // an opponent able to step into the run
+  pressure: 10,   // pressed as he starts
+  distance: 14,   // long carries give the defence time
+  progression: 10,
+  beaten: 8,      // opponents carried past
+};
+
+/**
+ * Evaluate a carry: the player on the ball runs with it from `from` to
+ * `to`. Defenders react with the same reaction-and-acceleration model as
+ * for passes, while the carrier travels at match speed with the ball.
+ */
+export function evaluateCarry(from, to, ctx) {
+  const { defenders = [] } = ctx || {};
+  const d = dist(from, to);
+  const t = d / SPEED.carry;
+  const W = CARRY_WEIGHTS;
+  const factors = [];
+  const add = (points, label, detail) => { factors.push({ points: Math.round(points), label, detail }); return points; };
+  let score = W.base;
+
+  // Room at the destination when he arrives.
+  const sep = effectiveSeparation(to, defenders, t);
+  score += add(clamp((sep.effective - 2) / 7, -1, 1) * W.space,
+    sep.effective >= 4 ? 'Space to run into' : sep.effective >= 1.5 ? 'Some space to run into' : 'Running into a defender',
+    `The nearest opponent to where he is going is ${round1(sep.start)} yd away and closes about ${round1(sep.closing)} yd while he runs, leaving roughly ${round1(sep.effective)} yd.`);
+
+  // Can an opponent step into the run before he gets past?
+  let pathRisk = 0, culprit = null;
+  for (const o of defenders) {
+    const { distance, t: along } = pointToSegment(o, from, to);
+    if (along <= 0.05) continue;
+    const reach = distance - runDistance(t * along, SPEED.defenderRecovery);
+    const r = clamp(1 - reach / 2.5, 0, 1) * (along < 0.95 ? 1 : 0.6);
+    if (r > pathRisk) { pathRisk = r; culprit = o; }
+  }
+  score += add(-pathRisk * W.path,
+    pathRisk < 0.2 ? 'Clear run' : pathRisk < 0.6 ? 'An opponent can get close to the run' : 'An opponent can step into the run',
+    culprit ? `The ${culprit.pos || 'opponent'} is near the line of the run and can get across in time.` : 'Nobody can get across the line of the run in time.');
+
+  // Pressure as he starts.
+  const press = nearestDefender(from, defenders);
+  const pressNorm = clamp(1 - press.distance / 7, 0, 1);
+  if (pressNorm > 0.05) score += add(-pressNorm * W.pressure, 'Pressed as he sets off', `An opponent is ${round1(press.distance)} yd away when he starts to run.`);
+
+  // Long carries.
+  const long = clamp((d - 10) / 12, 0, 1);
+  if (long > 0) score += add(-long * W.distance, 'Long carry', `${round1(d)} yd with the ball, about ${round1(t)}s for the defence to react.`);
+
+  // Ground gained and opponents carried past.
+  const progression = distanceToGoal(from) - distanceToGoal(to);
+  score += add(clamp(progression / 15, -1, 1) * W.progression,
+    progression > 3 ? 'Drives toward goal' : progression < -3 ? 'Carries away from goal' : 'Holds field position',
+    `Distance to goal goes from ${round1(distanceToGoal(from))} yd to ${round1(distanceToGoal(to))} yd.`);
+  const beaten = to.x > from.x + 1
+    ? defenders.filter((o) => o.x > from.x + 0.5 && o.x < to.x - 0.5 && pointToSegment(o, from, to).distance < 8).length : 0;
+  if (beaten > 0) score += add(clamp(beaten / 2, 0, 1) * W.beaten, `Carries past ${beaten} opponent${beaten > 1 ? 's' : ''}`, 'Beating a player by running past him takes him out of the game just like a line-breaking pass.');
+
+  const confidence = Math.round(clamp(score, 3, 97));
+  return {
+    confidence,
+    kind: 'carry',
+    passType: 'carry',
+    passTypeLabel: 'Carry',
+    factors: factors.filter((f) => f.points !== 0),
+    metrics: {
+      passDistance: round1(d),
+      travelTime: round1(t),
+      startingSeparation: round1(sep.start),
+      closingDistance: round1(sep.closing),
+      effectiveSeparation: round1(sep.effective),
+      laneRisk: Math.round(pathRisk * 100),
+      pressureOnPasser: round1(press.distance),
+      distanceToGoalBefore: round1(distanceToGoal(from)),
+      distanceToGoalAfter: round1(distanceToGoal(to)),
+      progression: round1(progression),
+      linesBroken: beaten,
+    },
+  };
+}
+
 /** How well a pass type suits the geometry. Returns -1..1 scaled points. */
 function passTypeFit(type, { d, lane, sep, fwd, spaceBehind }) {
   switch (type) {
@@ -381,7 +485,9 @@ export function evaluateSequence(sequence, scenario) {
     const bad = sequence.find((s) => s.result.confidence === weakest);
     notes.push({
       tone: 'bad',
-      text: `The ${bad.result.passTypeLabel.toLowerCase()} to ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of getting through. A sequence is only as safe as its riskiest pass.`,
+      text: bad.result.kind === 'carry'
+        ? `The carry by ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of keeping the ball. A sequence is only as safe as its riskiest action.`
+        : `The ${bad.result.passTypeLabel.toLowerCase()} to ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of getting through. A sequence is only as safe as its riskiest pass.`,
     });
   }
   if (totalProgression > 20) {

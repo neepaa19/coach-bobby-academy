@@ -33,9 +33,16 @@ Rules applied in order:
 
 ## Time and speed
 
-Players move at most what they can cover while the ball travels plus about half a second.
+Players move at most what they can cover while the ball travels plus a quarter of a second
+for the receiver's first touch. Nobody reacts instantly: about 0.35s to read the pass, then
+about a second to reach top speed (`runDistance` in `engine.js`, shared with the scoring).
 Shifting with the block is a jog (4.4–5.0 yd/s); pressing, recovery runs and attacking runs are
 sprints (6.6–7.0 yd/s). So a quick switch of play genuinely beats a sliding defence.
+
+## Dribbling
+
+A carry is treated as a "pass to yourself" at 5.2 yd/s with the ball, up to 15 yd. Defenders
+react to it exactly as to a pass. Scored in `evaluateCarry` (engine.js).
 
 ## Honesty
 

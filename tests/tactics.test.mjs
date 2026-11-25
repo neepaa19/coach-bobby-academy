@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { SCENARIOS } from '../src/scenarios.js';
 import '../src/scenario-pack-2.js';
-import { reactToPass, styleFor, offsideLine, MIN_GAP, DEF_STYLES, ATT_STYLES } from '../src/tactics.js';
+import { reactToPass, planDefence, styleFor, offsideLine, MIN_GAP, DEF_STYLES, ATT_STYLES } from '../src/tactics.js';
 import { SPEED, dist } from '../src/engine.js';
 import { bestSequence } from '../src/planner.js';
 
@@ -48,16 +48,19 @@ test('the same pass always produces the same movement', () => {
   assert.deepEqual([...a.ours.entries()], [...b.ours.entries()]);
 });
 
-test('a high press holds its back line much higher than a low block', () => {
-  const backX = (r, theirs) => {
-    const backs = theirs.filter((p) => /B$/.test(p.pos));
-    return backs.reduce((a, p) => a + r.theirs.get(p.id).x, 0) / backs.length;
+test('a high press wants its back line much higher than a low block', () => {
+  // Compare where each style WANTS the line (before running limits), with
+  // the ball at our right back in build-up.
+  const s = SCENARIOS.find((x) => x.id === 'build-vs-press');
+  const homes = new Map([...s.ours, ...s.theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
+  const rb = s.ours.find((p) => p.id === 'u-rb');
+  const lineX = (style) => {
+    const plan = planDefence({ ball: rb, carrierId: rb.id, attackers: s.ours, defenders: s.theirs, homes, style });
+    const backs = s.theirs.filter((p) => /B$/.test(p.pos));
+    return backs.reduce((a, p) => a + plan.get(p.id).x, 0) / backs.length;
   };
-  const hi = play('build-vs-press', 'u-rb', 'highPress');
-  const lo = play('build-vs-press', 'u-rb', 'lowBlock');
   // Lower x = further from their own goal = a higher line.
-  assert.ok(backX(lo.r, lo.theirs) - backX(hi.r, hi.theirs) > 8,
-    `high ${backX(hi.r, hi.theirs).toFixed(1)} vs low ${backX(lo.r, lo.theirs).toFixed(1)}`);
+  assert.ok(lineX('lowBlock') - lineX('highPress') > 15, `high ${lineX('highPress').toFixed(1)} vs low ${lineX('lowBlock').toFixed(1)}`);
 });
 
 test('a high press sends two players; a low block does not press 70 yards from goal', () => {
@@ -100,7 +103,7 @@ test('no two players end up overlapping on the board', () => {
 test('nobody covers more ground than he could run while the ball travels', () => {
   const problems = [];
   for (const { s, r, from, to, ours, theirs, styles } of everyPass()) {
-    const dt = dist(from, to) / SPEED.ground + 0.55;
+    const dt = dist(from, to) / SPEED.ground + 0.25;
     const capD = DEF_STYLES[styles.theirs].sprint * dt + MIN_GAP; // + room for overlap nudges
     const capA = ATT_STYLES[styles.ours].sprint * dt + MIN_GAP;
     for (const p of theirs) { const m = dist(p, r.theirs.get(p.id)); if (m > capD) problems.push(`${s.id} ${p.pos} ran ${m.toFixed(1)}`); }

@@ -36,14 +36,14 @@
  * ------------------------------------------------------------------
  */
 
-import { SPEED, dist, clamp, laneRisk } from './engine.js';
+import { SPEED, dist, clamp, laneRisk, runDistance } from './engine.js';
 
 const GOAL_X = 105;
 const MID_Y = 34;
 /** No two markers closer than this: below it the circles overlap on screen. */
 export const MIN_GAP = 3.9;
-/** How long players keep adjusting after the ball arrives. */
-const SETTLE_TIME = 0.55;
+/** How long players keep adjusting after the ball arrives (the receiver's first touch). */
+export const SETTLE_TIME = 0.25;
 
 /* ============================ Styles ============================ */
 
@@ -160,7 +160,7 @@ export function capMove(a, b, max) {
  * Where a defending team (defending x = 105) wants to be with the ball at
  * `ball`. Returns Map id -> { x, y, why, job }.
  */
-export function planDefence({ ball, attackers, defenders, homes, style }) {
+export function planDefence({ ball, carrierId, attackers, defenders, homes, style }) {
   const S = typeof style === 'string' ? DEF_STYLES[style] : style;
   const depth = (p) => GOAL_X - p.x;
   const bd = depth(ball);
@@ -211,7 +211,10 @@ export function planDefence({ ball, attackers, defenders, homes, style }) {
   }
 
   // 4. Press.
-  const carrier = attackers.find((a) => Math.abs(a.x - ball.x) < 0.01 && Math.abs(a.y - ball.y) < 0.01) || ball;
+  const named = carrierId && attackers.find((a) => a.id === carrierId);
+  const carrier = named
+    ? { ...named, x: ball.x, y: ball.y }
+    : attackers.find((a) => Math.abs(a.x - ball.x) < 0.01 && Math.abs(a.y - ball.y) < 0.01) || ball;
   const inZone = bd <= S.press.zone || (Math.abs(ball.y - MID_Y) > 20 && bd <= S.press.wide);
   const taken = new Set();
   if (inZone) {
@@ -232,7 +235,7 @@ export function planDefence({ ball, attackers, defenders, homes, style }) {
     }
     if (S.press.pressers >= 2 && p1) {
       const options = attackers
-        .filter((a) => a !== carrier && !isKeeper(a) && dist(a, ball) < 24)
+        .filter((a) => a.id !== carrier.id && !isKeeper(a) && dist(a, ball) < 24)
         .sort((a, b) => dist(a, ball) - dist(b, ball));
       const opt = options[0];
       if (opt) {
@@ -260,7 +263,7 @@ export function planDefence({ ball, attackers, defenders, homes, style }) {
       const t = plan.get(d.id);
       if (t.job !== 'block') continue;
       const target = attackers
-        .filter((a) => a !== carrier && !isKeeper(a) && !marked.has(a.id) && dist(a, t) < 12)
+        .filter((a) => a.id !== carrier.id && !isKeeper(a) && !marked.has(a.id) && dist(a, t) < 12)
         .sort((a, b) => dist(a, t) - dist(b, t))[0];
       if (!target) continue;
       marked.add(target.id);
@@ -446,25 +449,28 @@ export function separate(positions, fixed = new Set()) {
  * each movement. `from` / `to` are the passer and receiver.
  */
 export function reactToPass({ from, to, passType = 'ground', ours, theirs, homes, styles, startBall }) {
-  const travel = dist(from, to) / (SPEED[passType] || SPEED.ground);
+  // A carry is a "pass to yourself": the same player, a new spot, at running speed.
+  const carry = from.id === to.id;
+  const travel = dist(from, to) / (carry ? SPEED.carry : (SPEED[passType] || SPEED.ground));
   const dt = travel + SETTLE_TIME;
   const ball = { x: to.x, y: to.y };
   const defStyle = DEF_STYLES[styles.theirs] || DEF_STYLES.midBlock;
   const attStyle = ATT_STYLES[styles.ours] || ATT_STYLES.possession;
 
-  const defPlan = planDefence({ ball, attackers: ours, defenders: theirs, homes, style: defStyle });
+  const defPlan = planDefence({ ball, carrierId: to.id, attackers: ours, defenders: theirs, homes, style: defStyle });
   const defNew = theirs.map((d) => {
     const t = defPlan.get(d.id);
     // Shifting with the block is a jog; pressing and recovery runs are sprints.
-    const m = capMove(d, t, (t.sprint ? defStyle.sprint : defStyle.shift) * dt);
+    const m = capMove(d, t, runDistance(dt, t.sprint ? defStyle.sprint : defStyle.shift));
     return { ...d, x: m.x, y: m.y, why: m.capped ? `${t.why} He cannot get all the way there before the ball arrives, so he is still moving.` : t.why, job: t.job };
   });
 
-  const supPlan = planSupport({ ball, carrierId: to.id, attackers: ours, defenders: defNew, homes, style: attStyle, startBall });
+  const oursNow = carry ? ours.map((p) => (p.id === to.id ? { ...p, x: to.x, y: to.y } : p)) : ours;
+  const supPlan = planSupport({ ball, carrierId: to.id, attackers: oursNow, defenders: defNew, homes, style: attStyle, startBall });
   const attNew = ours.map((p) => {
     const t = supPlan.get(p.id);
-    if (p.id === to.id) return { ...p, why: t.why, job: t.job };
-    const m = capMove(p, t, (t.sprint ? attStyle.sprint : attStyle.shift) * dt);
+    if (p.id === to.id) return { ...p, x: to.x, y: to.y, why: carry ? 'Runs with the ball into the space in front of him.' : t.why, job: t.job };
+    const m = capMove(p, t, runDistance(dt, t.sprint ? attStyle.sprint : attStyle.shift));
     return { ...p, x: m.x, y: m.y, why: t.why, job: t.job };
   });
 

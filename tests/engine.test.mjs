@@ -5,8 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import {
-  evaluatePass, rankPassTypes, rankOptions, evaluateSequence,
-  laneRisk, linesBroken, effectiveSeparation, distanceToGoal,
+  evaluatePass, evaluateCarry, rankPassTypes, rankOptions, evaluateSequence,
+  laneRisk, linesBroken, effectiveSeparation, distanceToGoal, runDistance,
 } from '../src/engine.js';
 
 let passed = 0;
@@ -180,6 +180,22 @@ test('the primary recommendation is never a pass the defence is favourite to win
   const defs = [P('d1', 'X', 68, 36), P('d2', 'X', 72, 32), P('d3', 'X', 50, 10)];
   const r = rankOptions(c, [c, safeForward, riskyLong], defs);
   assert.equal(r.primary.player.id, 'b', `primary was ${r.primary.player.pos} at ${r.primary.confidence}%`);
+});
+
+
+test('defenders need time to react and accelerate', () => {
+  assert.equal(runDistance(0.3, 7), 0, 'nobody moves before reacting');
+  assert.ok(runDistance(1, 7) < 7 * 1 * 0.5, 'still accelerating after one second');
+  assert.ok(runDistance(3, 7) > runDistance(2, 7), 'longer time, more ground');
+});
+
+test('dribbling into open space is safe; dribbling into a defender is not', () => {
+  const from = P('a', 'CM', 40, 34);
+  const open = evaluateCarry(from, { x: 50, y: 34 }, { defenders: [P('d', 'X', 70, 10)] });
+  const blocked = evaluateCarry(from, { x: 50, y: 34 }, { defenders: [P('d', 'X', 47, 34.5)] });
+  assert.ok(open.confidence >= 80, `open carry ${open.confidence}`);
+  assert.ok(blocked.confidence <= 50, `blocked carry ${blocked.confidence}`);
+  assert.ok(open.confidence > blocked.confidence);
 });
 
 console.log(`\n${passed} passing`);
