@@ -6,6 +6,7 @@ Approved decisions only, newest first. Ideas still being discussed live in the c
 
 | Decision | Status |
 |---|---|
+| Netlify login requirement for test (non-production) versions turned off, so preview links open directly on the phone; live site unaffected | Approved, done |
 | Development happens on branches with Netlify deploy previews; merge to `main` (a paid-credit production deploy on the free plan) only when the owner says "publish", batching changes | Approved |
 | Opponent behaviour driven by team styles (high press, mid block, low block, recovering) for all 22 players, with a reason for every movement | Approved, built |
 | Pitch-first phone interface: vertical pitch, compact scenario card, nothing covering players | Approved, built |
