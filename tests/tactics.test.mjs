@@ -9,6 +9,7 @@ import { SCENARIOS } from '../src/scenarios.js';
 import '../src/scenario-pack-2.js';
 import { reactToPass, styleFor, offsideLine, MIN_GAP, DEF_STYLES, ATT_STYLES } from '../src/tactics.js';
 import { SPEED, dist } from '../src/engine.js';
+import { bestSequence } from '../src/planner.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -119,6 +120,30 @@ test('every scenario resolves to a known style', () => {
     const st = styleFor(s);
     assert.ok(DEF_STYLES[st.theirs], `${s.id}: ${st.theirs}`);
     assert.ok(ATT_STYLES[st.ours], `${s.id}: ${st.ours}`);
+  }
+});
+
+
+function best(id) {
+  const s = SCENARIOS.find((x) => x.id === id);
+  const ours = s.ours.map((p) => ({ ...p })), theirs = s.theirs.map((p) => ({ ...p }));
+  const homes = new Map([...ours, ...theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
+  const c = ours.find((p) => p.id === s.startCarrier);
+  return { s, b: bestSequence({ scenario: s, ours, theirs, homes, styles: styleFor(s), startBall: { x: c.x, y: c.y } }) };
+}
+
+test('the best-sequence planner is deterministic and stays inside the action limit', () => {
+  for (const sc of SCENARIOS) {
+    const a = best(sc.id).b, b = best(sc.id).b;
+    assert.deepEqual(a.sequence.map((x) => x.to.id), b.sequence.map((x) => x.to.id), sc.id);
+    assert.ok(a.sequence.length >= 1 && a.sequence.length <= (sc.maxActions || 5), sc.id);
+    assert.ok(a.sequence.every((x) => !/GK/.test(x.toLabel)), `${sc.id} routes through the keeper`);
+  }
+});
+
+test('the planner solves the straightforward scenarios', () => {
+  for (const id of ['reach-the-winger', 'beat-the-first-line', 'build-vs-press']) {
+    assert.ok(best(id).b.objectiveMet, `${id} not solved`);
   }
 });
 

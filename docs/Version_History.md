@@ -67,3 +67,5 @@ Shipped August 2026 (the docs still listed it as planned).
 - Fixed the high-press scenario's 35-yard gap between midfield and defence.
 - Scoring: "through ball" only when there is space beyond the receiver; the primary recommendation no longer goes to a pass the defence is favourite to win.
 - New `tests/tactics.test.mjs` (8 tests), 3 new engine tests; both run in CI.
+- **Best sequence**: after you finish, the engine searches for the strongest full multi-pass route (same scoring, same movement) and can play it on the board with a pass-by-pass caption (`src/planner.js`).
+- **Live goal tracker** above the pitch ("Not there yet · 3 passes left" / "Goal reached"); Finish stays quiet until the goal is reached and asks for a second tap if you stop early; the analysis says plainly when you stopped with passes left.

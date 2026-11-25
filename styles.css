@@ -692,3 +692,46 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
   /* Header + scenario card + chips + Finish bar + tab bar: the pitch gets the rest. */
   .pitch { max-height: calc(100svh - 385px); }
 }
+
+/* ------------------- Goal tracker, finish states, best sequence ------------------- */
+.goal-status {
+  margin: 0 2px 6px; padding: 7px 10px; border-radius: 10px; font-size: .8rem; line-height: 1.35;
+  border: 1px solid var(--line); background: rgba(255,255,255,.03);
+}
+.goal-status b { display: block; font-size: .84rem; }
+.goal-status span { color: var(--muted); }
+.goal-status.todo { border-color: rgba(53,211,165,.3); }
+.goal-status.open { border-color: rgba(255,194,71,.45); background: rgba(255,194,71,.07); }
+.goal-status.open b { color: var(--warn); }
+.goal-status.met { border-color: rgba(53,211,165,.6); background: rgba(53,211,165,.12); }
+.goal-status.met b { color: var(--accent); }
+.goal-status.out { border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.07); }
+
+/* Before the goal is reached Finish is a quiet button; once reached it lights up. */
+.btn-finish:not(:disabled):not(.goal-met) {
+  background: rgba(255,255,255,.08); color: var(--text); box-shadow: none; border: 1px solid var(--line);
+}
+.btn-finish.confirm { background: rgba(255,194,71,.18) !important; color: var(--warn) !important; border-color: rgba(255,194,71,.5) !important; font-size: .92rem; }
+
+.board-caption {
+  margin: 0 2px 6px; padding: 8px 10px; border-radius: 10px; font-size: .84rem;
+  background: rgba(53,211,165,.12); border: 1px solid rgba(53,211,165,.45);
+}
+.board-caption b { color: var(--accent); margin-right: 6px; }
+
+.best-seq { margin: 14px 0 6px; padding: 14px; border-radius: 12px; border: 1px solid rgba(53,211,165,.35); background: rgba(53,211,165,.06); }
+.best-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.best-head h4 { font-size: .98rem; }
+.best-rating { font-size: 1.3rem; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.best-rating em { font-style: normal; font-size: .62rem; color: var(--dim); text-transform: uppercase; margin-left: 4px; letter-spacing: .05em; }
+.best-compare { font-size: .84rem; color: var(--muted); margin: 4px 0 10px; }
+.best-steps { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.best-steps li { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: center; background: rgba(0,0,0,.18); border-radius: 10px; padding: 8px 10px; }
+.bs-n { width: 22px; height: 22px; border-radius: 50%; background: rgba(53,211,165,.22); color: var(--accent); font-size: .74rem; font-weight: 800; display: grid; place-items: center; }
+.bs-body b { display: block; font-size: .9rem; }
+.bs-body em { font-style: normal; font-size: .72rem; color: var(--dim); }
+.bs-pct { font-weight: 800; font-variant-numeric: tabular-nums; }
+.bs-pct.risky { color: var(--warn); }
+.best-note { font-size: .8rem; color: var(--warn); margin-bottom: 10px; }
+.best-foot { font-size: .74rem; color: var(--dim); margin-top: 8px; }
+.btn-block { width: 100%; }

@@ -8,8 +8,9 @@
 
 import {
   evaluatePass, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
-  distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS,
+  distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
+import { bestSequence } from './planner.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
 import { reactToPass, styleFor, separate, DEF_STYLES, ATT_STYLES } from './tactics.js';
@@ -339,6 +340,8 @@ function loadScenario(id) {
   const sc = State.ours.find((p) => p.id === s.startCarrier);
   State.startBall = { x: sc.x, y: sc.y };
   resetReasons();
+  State.best = null;
+  if ($('#boardCaption')) $('#boardCaption').hidden = true;
   State.sequence = [];
   State.submitted = false;
   State.analysis = null;
@@ -400,6 +403,43 @@ function resetReasons() {
 const carrier = () => State.ours.find((p) => p.id === State.carrierId);
 const outfieldTeammates = () => State.ours.filter((p) => p.id !== State.carrierId);
 
+/** The scenario objective in a few words, for the live tracker. */
+function goalShort(s) {
+  const o = s.objectiveCheck || {};
+  if (o.reachZone) return 'Get the ball into the green zone';
+  if (o.reachPlayer) { const p = s.ours.find((q) => q.id === o.reachPlayer); return `Get the ball to the ${p ? p.pos : 'target player'}`; }
+  if (o.minProgression != null) return `Move the ball ${o.minProgression}+ yd closer to goal`;
+  return 'Complete the objective';
+}
+
+const goalMet = () => State.sequence.length > 0 && checkObjective(State.sequence, State.scenario);
+
+/** Live tracker above the pitch: where you stand against the objective right now. */
+function renderGoalStatus() {
+  const box = $('#goalStatus');
+  if (!box) return;
+  const max = State.scenario.maxActions || 5;
+  const left = max - State.sequence.length;
+  const goal = goalShort(State.scenario);
+  let cls = 'todo', html;
+  if (State.submitted) { box.hidden = true; return; }
+  box.hidden = false;
+  if (!State.sequence.length) {
+    html = `<b>🎯 ${goal}</b><span>You have up to ${max} passes. Most solutions need more than one.</span>`;
+  } else if (goalMet()) {
+    cls = 'met';
+    html = `<b>✓ Goal reached</b><span>Finish now, or keep going if you can improve the position.</span>`;
+  } else if (left > 0) {
+    cls = 'open';
+    html = `<b>Not there yet · ${left} pass${left === 1 ? '' : 'es'} left</b><span>${goal}.</span>`;
+  } else {
+    cls = 'out';
+    html = `<b>No passes left</b><span>The goal was not reached. Finish to see how you did and watch the best sequence.</span>`;
+  }
+  box.className = `goal-status ${cls}`;
+  box.innerHTML = html;
+}
+
 function refreshBoardState() {
   // While reviewing, the board is rewound to the opening picture, so the carrier
   // shown must be the one who actually faced that decision.
@@ -413,7 +453,12 @@ function refreshBoardState() {
   $('#carrierLabel').textContent = shown ? shown.pos : '—';
   $('#finishBtn').disabled = State.submitted || used === 0;
   $('#undoBtn').disabled = State.submitted || used === 0;
-  $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : 'Finish Sequence';
+  State.confirmFinish = false;
+  const met = goalMet();
+  $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : met ? 'Finish sequence ✓' : 'Finish sequence';
+  $('#finishBtn').classList.toggle('goal-met', met && !State.submitted);
+  $('#finishBtn').classList.remove('confirm');
+  renderGoalStatus();
   $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'In progress';
   $('#stateBadge').className = `badge ${State.submitted ? 'badge-review' : 'badge-live'}`;
   $('.action-bar').hidden = State.submitted;
@@ -492,7 +537,25 @@ function undo() {
 
 function finishSequence() {
   if (State.submitted || !State.sequence.length) return;
+  const max = State.scenario.maxActions || 5;
+  // Stopping before the goal is allowed, but never by accident.
+  if (!goalMet() && State.sequence.length < max && !State.confirmFinish) {
+    State.confirmFinish = true;
+    const btn = $('#finishBtn');
+    btn.textContent = 'Goal not reached · tap again to finish anyway';
+    btn.classList.add('confirm');
+    clearTimeout(State._confirmTimer);
+    State._confirmTimer = setTimeout(() => { if (!State.submitted) refreshBoardState(); }, 4000);
+    return;
+  }
+  clearTimeout(State._confirmTimer);
   const analysis = evaluateSequence(State.sequence, State.scenario);
+  State.best = bestSequence({
+    scenario: State.scenario,
+    ours: State.startOurs.map((p) => ({ ...p })),
+    theirs: State.startTheirs.map((p) => ({ ...p })),
+    homes: State.homes, styles: State.styles, startBall: State.startBall,
+  });
   State.submitted = true;
   State.analysis = analysis;
 
@@ -765,6 +828,35 @@ function renderSequence() {
     </div>`).join('');
 }
 
+/** Said plainly when the learner stopped short with passes still in hand. */
+function earlyStopNote(a) {
+  const max = State.scenario.maxActions || 5;
+  const n = State.sequence.length;
+  if (a.verdict === 'success' || n >= max) return '';
+  const left = max - n;
+  return `<li class="note note-warn"><b>You stopped after ${n} pass${n === 1 ? '' : 'es'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
+}
+
+/** The engine's best full sequence from the opening picture, next to yours. */
+function bestSequenceCard(a) {
+  const b = State.best;
+  if (!b || !b.sequence.length) return '';
+  const steps = b.sequence.map((st, i) => `
+    <li><span class="bs-n">${i + 1}</span><span class="bs-body"><b>${st.fromLabel} → ${st.toLabel}</b><em>${st.result.passTypeLabel}</em></span><span class="bs-pct${st.result.confidence < 50 ? ' risky' : ''}">${st.result.confidence}%</span></li>`).join('');
+  return `
+    <section class="best-seq">
+      <div class="best-head">
+        <h4>Best sequence the engine found</h4>
+        <span class="best-rating">${b.analysis.rating}<em>rating</em></span>
+      </div>
+      <p class="best-compare">Yours: ${a.summary.passes} pass${a.summary.passes === 1 ? '' : 'es'}, rated ${a.rating}. Best found: ${b.sequence.length} pass${b.sequence.length === 1 ? '' : 'es'}, rated ${b.analysis.rating}${b.objectiveMet ? ', objective met' : ''}.</p>
+      <ol class="best-steps">${steps}</ol>
+      ${b.objectiveMet ? '' : '<p class="best-note">Even the best route found here does not fully reach the goal, so this scenario is genuinely hard. Some of these goals need a pass into a teammate\'s run, which the board cannot play yet.</p>'}
+      <button class="btn btn-primary btn-block" id="watchBestBtn">▶ Watch the best sequence</button>
+      <p class="best-foot">Played with the same scoring and the same defensive movement as your own passes. It is the strongest route the engine found, not the only good answer.</p>
+    </section>`;
+}
+
 function renderAnalysis(a) {
   const panel = $('#analysis');
   panel.hidden = false;
@@ -792,13 +884,12 @@ function renderAnalysis(a) {
     </div>
 
     <ul class="notes">
+      ${earlyStopNote(a)}
       ${a.notes.map((n) => `<li class="note note-${n.tone}">${n.text}</li>`).join('')}
     </ul>
 
-    <div class="analysis-actions analysis-actions-watch">
-      <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best route</button>
-    </div>
-    <p class="watch-hint">Tap any coloured line on the pitch — or a swatch in the key — to see that pass and its confidence.</p>
+    ${bestSequenceCard(a)}
+    <p class="watch-hint">The arrows on the pitch show the options from the opening picture. Tap any coloured line, or a swatch in the key, to see that pass and its confidence.</p>
 
     <p class="reveal-lead">Three things sit underneath, in the order most people want them. Open only what you need.</p>
 
@@ -902,7 +993,7 @@ function renderAnalysis(a) {
       if (open) btn.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
     };
   }
-  $('#watchBestBtn').onclick = playBestRoute;
+  if ($('#watchBestBtn')) $('#watchBestBtn').onclick = playBestSequence;
   $('#retryBtn').onclick = () => loadScenario(State.scenario.id);
   $('#nextScenarioBtn').onclick = () => {
     const i = SCENARIOS.findIndex((s) => s.id === State.scenario.id);
@@ -916,35 +1007,51 @@ function renderAnalysis(a) {
  * the ball travel and the defence react rather than reading a static arrow.
  * Restores the opening picture and the arrows when it finishes.
  */
-async function playBestRoute() {
-  const ranked = State._ranked;
-  if (!ranked || !ranked.primary || State.busy) return;
-
+/**
+ * Replays the engine's best full sequence on the board, pass by pass, from
+ * the opening picture, with a caption so you can follow along.
+ */
+async function playBestSequence() {
+  const b = State.best;
+  if (!b || !b.sequence.length || State.busy) return;
   const btn = $('#watchBestBtn');
+  const cap = $('#boardCaption');
   State.busy = true;
   $('#board').classList.add('busy');
   if (btn) { btn.disabled = true; btn.textContent = 'Playing…'; }
+  $('#board').scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
 
-  // Clear the arrows so nothing overlays the demonstration.
+  // Back to the opening picture with nothing drawn over it.
   Board.clearArrows();
   $('#routeKey').hidden = true;
+  for (const p of State.ours) { const h = State.startOurs.find((q) => q.id === p.id); Board.move(p, h.x, h.y); }
+  for (const p of State.theirs) { const h = State.startTheirs.find((q) => q.id === p.id); Board.move(p, h.x, h.y); }
+  Board.setView(fitView(State.scenario));
+  let carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
+  Board.setCarrier(carrierNode.id);
+  Board.moveBall(carrierNode.x, carrierNode.y);
+  await new Promise((r) => setTimeout(r, 600));
 
-  const carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
-  const receiver = State.ours.find((p) => p.id === ranked.primary.player.id);
-  if (carrierNode && receiver) {
-    Board.setCarrier(carrierNode.id);
-    Board.moveBall(carrierNode.x, carrierNode.y);
-    await new Promise((r) => setTimeout(r, 450));
-    await animatePass(carrierNode, receiver, ranked.primary.passType);
+  for (let i = 0; i < b.sequence.length; i++) {
+    const st = b.sequence[i];
+    const receiver = State.ours.find((p) => p.id === st.to.id);
+    cap.hidden = false;
+    cap.innerHTML = `<b>Pass ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
+    await animatePass(carrierNode, receiver, st.result.passType);
     Board.setCarrier(receiver.id);
-    await new Promise((r) => setTimeout(r, 700));
+    carrierNode = receiver;
+    await new Promise((r) => setTimeout(r, 650));
   }
+  cap.innerHTML = b.objectiveMet ? '<b>✓ Objective reached</b> That is the best sequence the engine found.' : '<b>End of the best sequence</b> The closest the engine got to the goal.';
+  await new Promise((r) => setTimeout(r, 1400));
+  cap.hidden = true;
 
-  // Put the opening picture back and restore the arrows.
+  // Restore the review picture and its arrows.
   drawPostSubmissionOptions();
+  refreshBoardState();
   State.busy = false;
   $('#board').classList.remove('busy');
-  if (btn) { btn.disabled = false; btn.textContent = 'Watch the best route again'; }
+  if (btn) { btn.disabled = false; btn.textContent = '▶ Watch it again'; }
 }
 
 /* ---------------------------- Profile ---------------------------- */

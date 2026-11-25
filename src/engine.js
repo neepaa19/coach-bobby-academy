@@ -417,7 +417,7 @@ export function evaluateSequence(sequence, scenario) {
   };
 }
 
-function checkObjective(sequence, scenario) {
+export function checkObjective(sequence, scenario) {
   const last = sequence[sequence.length - 1];
   const o = scenario.objectiveCheck || {};
   if (o.reachPlayer) return last.to.id === o.reachPlayer;
