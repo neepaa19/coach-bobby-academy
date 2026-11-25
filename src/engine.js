@@ -23,7 +23,23 @@ export const SPEED = {
   chip: 12,
   defenderRecovery: 6.4,
   playerJog: 4.2,
+  carry: 5.2,          // running with the ball at match speed
 };
+
+/*
+ * How far a player really gets in `t` seconds. Nobody reacts instantly
+ * or starts at top speed: about a third of a second to read the pass,
+ * then roughly a second to accelerate. Used by both the scoring and the
+ * movement, so the board and the percentages always agree.
+ */
+export const REACTION_TIME = 0.35;
+export const ACCEL_TIME = 1.0;
+export function runDistance(t, topSpeed) {
+  const go = t - REACTION_TIME;
+  if (go <= 0) return 0;
+  if (go <= ACCEL_TIME) return 0.5 * topSpeed * (go * go) / ACCEL_TIME;
+  return topSpeed * (go - ACCEL_TIME / 2);
+}
 
 /*
  * WEIGHTS — the published scoring model.
@@ -93,7 +109,7 @@ export function nearestDefender(point, defenders) {
  */
 export function effectiveSeparation(receiver, defenders, travelTime) {
   const { defender, distance } = nearestDefender(receiver, defenders);
-  const closing = SPEED.defenderRecovery * travelTime;
+  const closing = runDistance(travelTime, SPEED.defenderRecovery);
   // A defender only closes the gap he is actually oriented to close.
   // Ball-side defenders recover faster than those behind the receiver.
   const behind = defender && defender.x < receiver.x ? 0.75 : 1;
@@ -176,7 +192,7 @@ export function evaluatePass(from, to, ctx) {
   const sepNorm = clamp((sep.effective - 1.5) / 8, -1, 1);
   score += add(
     sepNorm * WEIGHTS.separation,
-    sep.effective >= 4 ? 'Receiver has room' : 'Receiver is tight',
+    sep.effective >= 4 ? 'Receiver has room' : sep.effective >= 1.5 ? 'Receiver has a little room' : 'Receiver is tight',
     `${round1(sep.start)} yd of starting separation; the nearest defender closes about ${round1(sep.closing)} yd while the ball travels, leaving roughly ${round1(sep.effective)} yd on the ball's arrival.`
   );
 
@@ -242,7 +258,14 @@ export function evaluatePass(from, to, ctx) {
   }
 
   // 9. Does the chosen pass type fit the picture?
-  const fit = passTypeFit(passType, { d, lane, sep, fwd });
+  // Space behind: no opponent just goal-side of the receiver, so a ball
+  // played beyond him can be run onto rather than played to feet.
+  const spaceBehind = !defenders.some((o) => o.x > to.x && o.x - to.x < 9 && Math.abs(o.y - to.y) < 7);
+  // ...and a through ball is played in behind the defence, so the receiver
+  // must be near their back line (the second-deepest opponent, after the keeper).
+  const xs = defenders.map((o) => o.x).sort((a, b) => b - a);
+  const nearLastLine = xs.length < 2 || to.x >= xs[1] - 10;
+  const fit = passTypeFit(passType, { d, lane, sep, fwd, spaceBehind: spaceBehind && nearLastLine });
   score += add(fit.points * WEIGHTS.typeFit, fit.label, fit.detail);
 
   const confidence = Math.round(clamp(score, 3, 97));
@@ -268,17 +291,206 @@ export function evaluatePass(from, to, ctx) {
   };
 }
 
+/*
+ * CARRY_WEIGHTS — running with the ball. Same idea as passing: a base,
+ * then named factors with fixed maximum influence.
+ */
+export const CARRY_WEIGHTS = {
+  base: 76,
+  space: 16,      // room at the destination when he gets there
+  path: 34,       // an opponent able to step into the run
+  pressure: 10,   // pressed as he starts
+  distance: 14,   // long carries give the defence time
+  progression: 10,
+  beaten: 8,      // opponents carried past
+};
+
+/**
+ * Evaluate a carry: the player on the ball runs with it from `from` to
+ * `to`. Defenders react with the same reaction-and-acceleration model as
+ * for passes, while the carrier travels at match speed with the ball.
+ */
+export function evaluateCarry(from, to, ctx) {
+  const { defenders = [] } = ctx || {};
+  const d = dist(from, to);
+  const t = d / SPEED.carry;
+  const W = CARRY_WEIGHTS;
+  const factors = [];
+  const add = (points, label, detail) => { factors.push({ points: Math.round(points), label, detail }); return points; };
+  let score = W.base;
+
+  // Room at the destination when he arrives.
+  const sep = effectiveSeparation(to, defenders, t);
+  score += add(clamp((sep.effective - 2) / 7, -1, 1) * W.space,
+    sep.effective >= 4 ? 'Space to run into' : sep.effective >= 1.5 ? 'Some space to run into' : 'Running into a defender',
+    `The nearest opponent to where he is going is ${round1(sep.start)} yd away and closes about ${round1(sep.closing)} yd while he runs, leaving roughly ${round1(sep.effective)} yd.`);
+
+  // Can an opponent step into the run before he gets past?
+  let pathRisk = 0, culprit = null;
+  for (const o of defenders) {
+    const { distance, t: along } = pointToSegment(o, from, to);
+    if (along <= 0.05) continue;
+    const reach = distance - runDistance(t * along, SPEED.defenderRecovery);
+    const r = clamp(1 - reach / 2.5, 0, 1) * (along < 0.95 ? 1 : 0.6);
+    if (r > pathRisk) { pathRisk = r; culprit = o; }
+  }
+  score += add(-pathRisk * W.path,
+    pathRisk < 0.2 ? 'Clear run' : pathRisk < 0.6 ? 'An opponent can get close to the run' : 'An opponent can step into the run',
+    culprit ? `The ${culprit.pos || 'opponent'} is near the line of the run and can get across in time.` : 'Nobody can get across the line of the run in time.');
+
+  // Pressure as he starts.
+  const press = nearestDefender(from, defenders);
+  const pressNorm = clamp(1 - press.distance / 7, 0, 1);
+  if (pressNorm > 0.05) score += add(-pressNorm * W.pressure, 'Pressed as he sets off', `An opponent is ${round1(press.distance)} yd away when he starts to run.`);
+
+  // Long carries.
+  const long = clamp((d - 10) / 12, 0, 1);
+  if (long > 0) score += add(-long * W.distance, 'Long carry', `${round1(d)} yd with the ball, about ${round1(t)}s for the defence to react.`);
+
+  // Ground gained and opponents carried past.
+  const progression = distanceToGoal(from) - distanceToGoal(to);
+  score += add(clamp(progression / 15, -1, 1) * W.progression,
+    progression > 3 ? 'Drives toward goal' : progression < -3 ? 'Carries away from goal' : 'Holds field position',
+    `Distance to goal goes from ${round1(distanceToGoal(from))} yd to ${round1(distanceToGoal(to))} yd.`);
+  const beaten = to.x > from.x + 1
+    ? defenders.filter((o) => o.x > from.x + 0.5 && o.x < to.x - 0.5 && pointToSegment(o, from, to).distance < 8).length : 0;
+  if (beaten > 0) score += add(clamp(beaten / 2, 0, 1) * W.beaten, `Carries past ${beaten} opponent${beaten > 1 ? 's' : ''}`, 'Beating a player by running past him takes him out of the game just like a line-breaking pass.');
+
+  const confidence = Math.round(clamp(score, 3, 97));
+  return {
+    confidence,
+    kind: 'carry',
+    passType: 'carry',
+    passTypeLabel: 'Carry',
+    factors: factors.filter((f) => f.points !== 0),
+    metrics: {
+      passDistance: round1(d),
+      travelTime: round1(t),
+      startingSeparation: round1(sep.start),
+      closingDistance: round1(sep.closing),
+      effectiveSeparation: round1(sep.effective),
+      laneRisk: Math.round(pathRisk * 100),
+      pressureOnPasser: round1(press.distance),
+      distanceToGoalBefore: round1(distanceToGoal(from)),
+      distanceToGoalAfter: round1(distanceToGoal(to)),
+      progression: round1(progression),
+      linesBroken: beaten,
+    },
+  };
+}
+
+/*
+ * SHOOTING — expected goals (xG): of 100 shots like this one, how many
+ * would usually go in? Built from the factors analysts use: the angle of
+ * goal the shooter can see (which combines distance and position),
+ * opponents in the way, where the keeper is, and pressure on the shooter.
+ * A transparent coaching model, roughly in line with typical public xG
+ * figures (a central shot from 12 yd is about 1 in 5; from 25 yd about
+ * 1 in 20). Not a measured probability, and the shot's outcome is never
+ * simulated: the app shows the chance, not a random result.
+ */
+export const GOAL_WIDTH = 8;   // yards between the posts
+export const SHOT_RANGE = 35;  // beyond this the app does not offer a shot
+
+/** Angle of goal (radians) visible from a point. */
+export function goalAngle(p) {
+  const a = Math.atan2(GOAL.y - GOAL_WIDTH / 2 - p.y, GOAL.x - p.x);
+  const b = Math.atan2(GOAL.y + GOAL_WIDTH / 2 - p.y, GOAL.x - p.x);
+  return Math.abs(b - a);
+}
+
+/** Is point o inside the triangle from shooter s to both posts? */
+function inShotCone(o, s) {
+  const p1 = { x: GOAL.x, y: GOAL.y - GOAL_WIDTH / 2 }, p2 = { x: GOAL.x, y: GOAL.y + GOAL_WIDTH / 2 };
+  const sign = (a, b, c) => (a.x - c.x) * (b.y - c.y) - (b.x - c.x) * (a.y - c.y);
+  const d1 = sign(o, s, p1), d2 = sign(o, p1, p2), d3 = sign(o, p2, s);
+  const neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(neg && pos);
+}
+
+export function evaluateShot(from, ctx) {
+  const { defenders = [], teammates = [], skipAlternative = false } = ctx || {};
+  const keeper = defenders.find((o) => o.role === 'keeper');
+  const outfield = defenders.filter((o) => o.role !== 'keeper');
+  const d = distanceToGoal(from);
+  const angle = goalAngle(from);
+  const factors = [];
+  const note = (label, detail, points = 0) => factors.push({ points, label, detail });
+
+  // 1. Angle of goal: distance and position together.
+  const base = 0.55 * (1 - Math.exp(-1.15 * Math.pow(angle, 2.2)));
+  note(d < 12 ? 'Close to goal' : d < 20 ? 'Inside shooting range' : 'Long range',
+    `${round1(d)} yd out, with about ${Math.round((angle * 180) / Math.PI)}° of goal to aim at. On its own that is roughly ${Math.round(base * 100)} in 100.`);
+  let xg = base;
+
+  // 2. Opponents in the way (inside the triangle to the posts).
+  const blockers = outfield.filter((o) => o.x > from.x && inShotCone(o, from));
+  if (blockers.length) {
+    const m = Math.pow(0.6, Math.min(blockers.length, 3));
+    xg *= m;
+    note(`${blockers.length} opponent${blockers.length > 1 ? 's' : ''} in the way`, `${blockers.map((b) => b.pos).join(', ')} ${blockers.length > 1 ? 'are' : 'is'} between the ball and the goal and can block the shot.`, -1);
+  }
+
+  // 3. The keeper: well placed on the line between ball and goal, or not?
+  if (keeper) {
+    const t = clamp((keeper.x - from.x) / (GOAL.x - from.x), 0, 1);
+    const onLine = { x: from.x + (GOAL.x - from.x) * t, y: from.y + (GOAL.y - from.y) * t };
+    const off = dist(keeper, onLine);
+    if (off > 3) { xg *= 1.4; note('Keeper out of position', `The keeper is about ${round1(off)} yd off the line between the ball and the goal.`, 1); }
+    else note('Keeper well placed', 'The keeper is set between the ball and the middle of the goal.');
+  }
+
+  // 4. Pressure on the shooter.
+  const press = nearestDefender(from, outfield);
+  if (press.distance < 2.5) { xg *= 0.7; note('Shooting under pressure', `An opponent is ${round1(press.distance)} yd away, so the shot is rushed or blocked.`, -1); }
+  else if (press.distance < 5) { xg *= 0.85; note('Some pressure', `The nearest opponent is ${round1(press.distance)} yd away.`, -1); }
+
+  xg = clamp(xg, 0.01, 0.8);
+
+  // Was a teammate better placed? Pass success times his own shot.
+  let alternative = null;
+  if (!skipAlternative) {
+    for (const t of teammates) {
+      if (t.id === from.id || t.role === 'keeper' || distanceToGoal(t) > SHOT_RANGE) continue;
+      const passType = inferPassType(from, t, { defenders, teammates });
+      const pass = evaluatePass(from, t, { defenders, teammates, passType });
+      const their = evaluateShot(t, { defenders, teammates, skipAlternative: true }).xg;
+      const value = (pass.confidence / 100) * their;
+      if (!alternative || value > alternative.value) alternative = { player: t, pos: t.pos, passConfidence: pass.confidence, xg: their, value };
+    }
+    if (alternative && alternative.value <= xg * 1.15) alternative = null; // only flag a clearly better option
+  }
+
+  return {
+    kind: 'shot',
+    confidence: null,
+    xg: Math.round(xg * 100) / 100,
+    passType: 'shot',
+    passTypeLabel: 'Shot',
+    factors,
+    alternative,
+    metrics: {
+      passDistance: round1(d), travelTime: round1(d / SPEED.driven), xg: Math.round(xg * 100) / 100,
+      angleDeg: Math.round((angle * 180) / Math.PI), blockers: blockers.length,
+      distanceToGoalBefore: round1(d), distanceToGoalAfter: round1(d), progression: 0, linesBroken: 0,
+      effectiveSeparation: round1(press.distance),
+    },
+  };
+}
+
 /** How well a pass type suits the geometry. Returns -1..1 scaled points. */
-function passTypeFit(type, { d, lane, sep, fwd }) {
+function passTypeFit(type, { d, lane, sep, fwd, spaceBehind }) {
   switch (type) {
     case 'driven':
       return d > 22
         ? { points: 0.5, label: 'Driven ball suits the distance', detail: 'Driven passes cut the defence’s reaction time on longer range.' }
         : { points: -0.4, label: 'Driven ball is heavy here', detail: 'Over short range a driven pass is harder to control than a simple ground pass.' };
     case 'through':
-      return fwd > 0.6 && sep.effective > 1
-        ? { points: 0.6, label: 'Through ball attacks the space behind', detail: 'The receiver is running beyond, so the ball is played into space rather than to feet.' }
-        : { points: -0.6, label: 'No space to run into', detail: 'A through ball needs a runner and space behind the defence; neither is clearly present.' };
+      // A through ball is played into space for a runner. It only fits a
+      // forward pass of real length with open grass beyond the receiver.
+      return fwd > 0.68 && d >= 14 && spaceBehind && sep.effective > 1
+        ? { points: 0.6, label: 'Through ball attacks the space behind', detail: 'There is open grass beyond the receiver, so the ball can be played into his run rather than to his feet.' }
+        : { points: -0.7, label: 'No space to run into', detail: 'A through ball needs a forward run and open space beyond the receiver; here the pass is to feet.' };
     case 'chip':
       return lane.risk > 0.45
         ? { points: 0.55, label: 'Lofted ball clears the traffic', detail: 'Lifting the pass takes the covering defender out of the equation.' }
@@ -324,7 +536,10 @@ export function rankOptions(carrier, teammates, defenders) {
         effectiveSeparation: r.metrics.effectiveSeparation,
         // Value blends safety with penetration — a 95% backward pass is not
         // automatically better coaching than an 80% line-breaking pass.
-        value: r.confidence * 0.62 + clamp(r.metrics.progression, -20, 26) * 1.5 + r.metrics.linesBroken * 4,
+        value: r.confidence * 0.62 + clamp(r.metrics.progression, -20, 26) * 1.5 + r.metrics.linesBroken * 4
+          // ...but a pass the defence is favourite to win is not a recommendation,
+          // however far it travels. Below 55% the penalty grows quickly.
+          - Math.max(0, 55 - r.confidence) * 1.6,
       };
     })
     .sort((a, b) => b.value - a.value);
@@ -343,12 +558,16 @@ export function rankOptions(carrier, teammates, defenders) {
  * Grade a completed sequence against the scenario objective.
  * Returns a verdict, a 0-100 sequence rating, and concept evidence.
  */
-export function evaluateSequence(sequence, scenario) {
+export function evaluateSequence(sequence, scenario, opts = {}) {
   if (!sequence.length) {
     return { rating: 0, verdict: 'empty', headline: 'No sequence was played.', notes: [], concepts: [] };
   }
 
-  const confidences = sequence.map((s) => s.result.confidence);
+  // A shot is not a pass: it ends the move and is judged by its xG, not by
+  // whether it "gets through", so it is left out of the safety numbers.
+  const shot = sequence.find((s) => s.result.kind === 'shot');
+  const confidences = sequence.filter((s) => s.result.kind !== 'shot').map((s) => s.result.confidence);
+  if (!confidences.length) confidences.push(100);
   const weakest = Math.min(...confidences);
   const mean = confidences.reduce((a, b) => a + b, 0) / confidences.length;
   const last = sequence[sequence.length - 1];
@@ -357,11 +576,13 @@ export function evaluateSequence(sequence, scenario) {
 
   // Survival: the sequence is only as strong as its weakest pass.
   const survived = weakest >= 45;
-  const objectiveMet = checkObjective(sequence, scenario);
+  // A lesson with a checklist decides the objective itself (see lessons.js).
+  const objectiveMet = opts.objectiveMet != null ? opts.objectiveMet : checkObjective(sequence, scenario);
 
   let rating = mean * 0.5 + clamp(totalProgression, -25, 40) * 0.8 + totalLines * 3.5;
   if (!survived) rating -= (45 - weakest) * 0.9;
   if (objectiveMet) rating += 14;
+  if (shot) rating += shot.result.xg * 60;
   if (sequence.length > (scenario.maxActions || 5)) rating -= 10;
   // A sequence the defence wins cannot be presented as a strong sequence,
   // however much ground it covered before it broke down.
@@ -373,16 +594,22 @@ export function evaluateSequence(sequence, scenario) {
     const bad = sequence.find((s) => s.result.confidence === weakest);
     notes.push({
       tone: 'bad',
-      text: `The ${bad.result.passTypeLabel.toLowerCase()} to ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of getting through. A sequence is only as safe as its riskiest pass.`,
+      text: bad.result.kind === 'carry'
+        ? `The carry by ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of keeping the ball. A sequence is only as safe as its riskiest action.`
+        : `The ${bad.result.passTypeLabel.toLowerCase()} to ${bad.toLabel} is where this breaks down — an estimated ${weakest}% of getting through. A sequence is only as safe as its riskiest pass.`,
     });
   }
   if (totalProgression > 20) {
     notes.push({ tone: 'good', text: `The sequence moved the ball ${round1(totalProgression)} yd closer to goal.` });
-  } else if (totalProgression < 2) {
+  } else if (totalProgression < 2 && !shot) {
     notes.push({ tone: 'warn', text: 'Possession was kept, but the ball finished no closer to goal. Keeping the ball is a means, not the objective.' });
   }
   if (totalLines >= 2) {
     notes.push({ tone: 'good', text: `You played past ${totalLines} opponents across the sequence — that is what separates progression from circulation.` });
+  }
+  if (shot) {
+    const r = shot.result;
+    notes.push({ tone: r.xg >= 0.12 ? 'good' : 'warn', text: `The shot from ${r.metrics.passDistance} yd was worth ${r.xg.toFixed(2)} xG: about ${Math.round(r.xg * 100)} in 100 shots like it go in.${r.alternative ? ` The ${r.alternative.pos} was better placed: a ${r.alternative.passConfidence}% pass to a ${r.alternative.xg.toFixed(2)} xG chance.` : ''}` });
   }
   if (objectiveMet) {
     notes.push({ tone: 'good', text: `Objective met: ${scenario.objective}` });
@@ -393,8 +620,9 @@ export function evaluateSequence(sequence, scenario) {
   const verdict = !survived ? 'lost' : objectiveMet ? 'success' : 'partial';
   const headline =
     verdict === 'success' ? 'Objective achieved.'
-      : verdict === 'partial' ? 'Ball retained, objective missed.'
-        : 'The defence wins this sequence.';
+      : verdict === 'lost' ? 'The defence wins this sequence.'
+        : shot ? (shot.result.xg >= 0.12 ? 'A real chance, but the objective was missed.' : 'You shot, but it was a low-quality chance.')
+          : 'Ball retained, objective missed.';
 
   return {
     rating, verdict, headline, notes,
@@ -409,7 +637,7 @@ export function evaluateSequence(sequence, scenario) {
   };
 }
 
-function checkObjective(sequence, scenario) {
+export function checkObjective(sequence, scenario) {
   const last = sequence[sequence.length - 1];
   const o = scenario.objectiveCheck || {};
   if (o.reachPlayer) return last.to.id === o.reachPlayer;

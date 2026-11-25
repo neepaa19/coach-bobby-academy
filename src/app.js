@@ -7,11 +7,15 @@
  */
 
 import {
-  evaluatePass, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
-  distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS,
+  evaluatePass, evaluateCarry, evaluateShot, SHOT_RANGE, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
+  distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
+import { bestSequence } from './planner.js';
+import { missionStatus, snapshot, drawProgress } from './lessons.js';
+import { formationById, formationFromText, shape, LEVEL_NAMES } from './formations.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
+import { reactToPass, styleFor, separate, unitOfPos, DEF_STYLES, ATT_STYLES } from './tactics.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -49,7 +53,31 @@ const Units = {
 };
 const speed = (ydsPerSec) => formatSpeed(ydsPerSec, Units.get());
 
-const BALL_OFFSET = 2.75; // keeps the ball at the carrier's feet, clear of his label
+/*
+ * Orientation. Pitch data is always in yards with x = 0 our goal line and
+ * x = 105 theirs, y = 0 our right touchline. On a phone the pitch is drawn
+ * vertically, attacking up the screen, because a tall phone fits a tall
+ * pitch at almost twice the size. Wider screens draw it attacking right.
+ * One SVG transform does the mapping; text gets the inverse transform so
+ * labels always read the right way up.
+ */
+const ORIENT = {
+  vertical: {
+    root: 'matrix(0 -1 -1 0 68 105)',   // screen x = 68 - y, screen y = 105 - x
+    text: 'matrix(0 -1 -1 0 0 0)',
+    view: (v) => `${68 - v.y - v.h} ${105 - v.x - v.w} ${v.h} ${v.w}`,
+    ball: { x: -2.6, y: 0 },              // just below the marker on screen
+    arrow: '↑', direction: 'We attack up the pitch',
+  },
+  horizontal: {
+    root: 'matrix(1 0 0 -1 0 68)',       // screen x = x, screen y = 68 - y
+    text: 'matrix(1 0 0 -1 0 0)',
+    view: (v) => `${v.x} ${68 - v.y - v.h} ${v.w} ${v.h}`,
+    ball: { x: 0, y: -2.6 },
+    arrow: '→', direction: 'We attack this way',
+  },
+};
+const pickOrientation = () => (window.matchMedia('(max-width: 700px)').matches ? 'vertical' : 'horizontal');
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ============================ State ============================ */
@@ -65,6 +93,9 @@ const State = {
   analysis: null,
   busy: false,
   profile: Mastery.load(),
+  styles: { ours: 'possession', theirs: 'midBlock' },
+  reasons: new Map(),    // id -> why that player is where he is right now
+  startBall: null,
 };
 
 /* ============================ Board ============================ */
@@ -73,22 +104,39 @@ const Board = {
   svg: null,
   layers: {},
 
+  orient: ORIENT.vertical,
+
   mount(container) {
     container.innerHTML = '';
+    this.orientName = pickOrientation();
+    this.orient = ORIENT[this.orientName];
+    container.dataset.orient = this.orientName;
     const svg = el('svg', { class: 'pitch', preserveAspectRatio: 'xMidYMid meet' });
     this.svg = svg;
+    const root = el('g', { class: 'l-root', transform: this.orient.root });
+    svg.appendChild(root);
+    this.root = root;
     this.layers.pitch = el('g', { class: 'l-pitch' });
     this.layers.zones = el('g', { class: 'l-zones' });
+    this.layers.carry = el('g', { class: 'l-carry' });
     this.layers.arrows = el('g', { class: 'l-arrows' });
     this.layers.theirs = el('g', { class: 'l-theirs' });
     this.layers.ours = el('g', { class: 'l-ours' });
     this.layers.ball = el('g', { class: 'l-ball' });
-    Object.values(this.layers).forEach((l) => svg.appendChild(l));
+    Object.values(this.layers).forEach((l) => root.appendChild(l));
     container.appendChild(svg);
+    const hint = document.createElement('div');
+    hint.id = 'goalHint';
+    hint.className = `goal-hint ${this.orientName}`;
+    hint.hidden = true;
+    container.appendChild(hint);
   },
 
   setView(view) {
-    this.svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    this.view = view;
+    this.svg.setAttribute('viewBox', this.orient.view(view));
+    const hint = document.getElementById('goalHint');
+    if (hint) hint.hidden = view.x + view.w >= 104;
   },
 
   drawPitch() {
@@ -106,6 +154,9 @@ const Board = {
     line({ x: 99.1, y: 24.85, width: 5.5, height: 18.3 });
     g.appendChild(el('circle', { cx: 11, cy: 34, r: 0.4, fill: 'var(--pitch-line)' }));
     g.appendChild(el('circle', { cx: 94, cy: 34, r: 0.4, fill: 'var(--pitch-line)' }));
+    // The goals, 8 yd wide, sitting behind each goal line.
+    g.appendChild(el('rect', { x: -2, y: 30, width: 2, height: 8, class: 'goal-net ours' }));
+    g.appendChild(el('rect', { x: 105, y: 30, width: 2, height: 8, class: 'goal-net theirs' }));
   },
 
   drawZone(zone) {
@@ -128,9 +179,11 @@ const Board = {
         transform: `translate(${p.x} ${p.y})`,
         'data-id': p.id,
       });
-      g.appendChild(el('circle', { r: 2.5, class: 'hit' }));
-      g.appendChild(el('circle', { r: 1.95, class: 'marker' }));
-      g.appendChild(el('text', { y: 0.75, class: 'plabel' }, p.pos));
+      g.appendChild(el('circle', { r: 2.6, class: 'hit' }));
+      g.appendChild(el('circle', { r: 1.85, class: 'marker' }));
+      const t = el('g', { transform: this.orient.text });
+      t.appendChild(el('text', { y: 0.58, class: 'plabel' + (p.pos.length > 2 ? ' long' : '') }, p.pos));
+      g.appendChild(t);
       layer.appendChild(g);
       p._node = g;
     }
@@ -143,7 +196,8 @@ const Board = {
 
   drawBall(pos) {
     this.layers.ball.innerHTML = '';
-    const g = el('g', { class: 'ball', transform: `translate(${pos.x} ${pos.y + BALL_OFFSET})` });
+    const o = this.orient.ball;
+    const g = el('g', { class: 'ball', transform: `translate(${pos.x + o.x} ${pos.y + o.y})` });
     g.appendChild(el('circle', { r: 1.05, class: 'ball-outer' }));
     g.appendChild(el('circle', { r: 0.62, class: 'ball-inner' }));
     this.layers.ball.appendChild(g);
@@ -151,7 +205,8 @@ const Board = {
   },
 
   moveBall(x, y) {
-    if (this._ball) this._ball.setAttribute('transform', `translate(${x} ${y + BALL_OFFSET})`);
+    const o = this.orient.ball;
+    if (this._ball) this._ball.setAttribute('transform', `translate(${x + o.x} ${y + o.y})`);
   },
 
   clearArrows() { this.layers.arrows.innerHTML = ''; },
@@ -178,12 +233,29 @@ const Board = {
     g.appendChild(hit);
     if (label) {
       const mx = a.x + (b.x - a.x) * at, my = a.y + (b.y - a.y) * at;
-      const t = el('g', { transform: `translate(${mx} ${my})`, class: `route-tag ${cls}` });
+      const t = el('g', { transform: `translate(${mx} ${my}) ${this.orient.text}`, class: `route-tag ${cls}` });
       const w = label.length * 1.35 + 2.4;
       t.appendChild(el('rect', { x: -w / 2, y: -1.9, width: w, height: 3.8, rx: 1.9 }));
       t.appendChild(el('text', { y: 0.65 }, label));
       g.appendChild(t);
     }
+  },
+
+  /** Pitch coordinates (yards) of a screen tap, whatever the orientation. */
+  toPitch(clientX, clientY) {
+    const pt = this.svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const m = this.root.getScreenCTM();
+    if (!m) return null;
+    const q = pt.matrixTransform(m.inverse());
+    return { x: q.x, y: q.y };
+  },
+
+  showCarryRange(center, r) {
+    const g = this.layers.carry;
+    g.innerHTML = '';
+    if (!center) return;
+    g.appendChild(el('circle', { cx: center.x, cy: center.y, r, class: 'carry-ring' }));
   },
 
   setSelectable(ids) {
@@ -198,75 +270,19 @@ const Board = {
 /* ==================== Opponent & support movement ==================== */
 
 /**
- * Where the defence wants to be, given where the ball now is.
- * Shape-anchored: every defender is pulled from his own starting position
- * toward the ball, keeping the block's relative structure intact.
+ * Both teams' reaction to a pass, from the team styles in tactics.js.
+ * Returns Maps of id -> { x, y, why } and records the reasons so the
+ * learner can tap any player and ask why he moved.
  */
-function defensiveTargets(ball, carrier) {
-  const targets = new Map();
-  let presser = null, bestD = Infinity;
-  for (const d of State.theirs) {
-    if (d.role === 'keeper') continue;
-    const dd = dist(d, carrier);
-    if (dd < bestD) { bestD = dd; presser = d; }
-  }
-
-  for (const d of State.theirs) {
-    const home = State.homes.get(d.id);
-    if (d.role === 'keeper') {
-      targets.set(d.id, { x: home.x, y: clamp(34 + (ball.y - 34) * 0.16, 28, 40) });
-      continue;
-    }
-    // Lateral compactness: slide toward the ball's side of the pitch.
-    const slide = (ball.y - home.y) * 0.3;
-    // Line height: the block steps toward the ball up the pitch.
-    const step = (ball.x - home.x) * 0.16;
-    let tx = home.x + step;
-    let ty = home.y + slide;
-
-    if (d === presser) {
-      // The nearest defender closes the carrier down rather than holding shape.
-      const dd = dist(d, carrier) || 1;
-      const ux = (carrier.x - d.x) / dd, uy = (carrier.y - d.y) / dd;
-      tx = carrier.x - ux * 2.4;
-      ty = carrier.y - uy * 2.4;
-    }
-    // Never occupy the same ground as an attacker. A defender marks from a
-    // body's distance; stacking two markers on one point is unreadable and
-    // wrongly reads as zero separation.
-    const MIN_GAP = 2.2;
-    for (const a of State.ours) {
-      const gap = Math.hypot(tx - a.x, ty - a.y);
-      if (gap < MIN_GAP && gap > 0.001) {
-        tx = a.x + ((tx - a.x) / gap) * MIN_GAP;
-        ty = a.y + ((ty - a.y) / gap) * MIN_GAP;
-      }
-    }
-    targets.set(d.id, { x: clamp(tx, 1, 104), y: clamp(ty, 1, 67) });
-  }
-  return targets;
-}
-
-/** Attacking support: nearest teammates offer an angle, the far side holds width. */
-function supportTargets(ball, carrierId) {
-  const targets = new Map();
-  for (const p of State.ours) {
-    const home = State.homes.get(p.id);
-    if (p.role === 'keeper' || p.id === carrierId) { targets.set(p.id, { x: p.x, y: p.y }); continue; }
-    const d = dist(p, ball);
-    if (d < 22) {
-      // Close support drifts to an angle rather than standing in line.
-      const away = p.y >= ball.y ? 1 : -1;
-      targets.set(p.id, {
-        x: clamp(p.x + (p.x > ball.x ? 1.6 : -0.8), 1, 104),
-        y: clamp(p.y + away * 1.6, 2, 66),
-      });
-    } else {
-      // Far side pulls back toward its shape anchor and holds width.
-      targets.set(p.id, { x: p.x + (home.x - p.x) * 0.25, y: p.y + (home.y - p.y) * 0.25 });
-    }
-  }
-  return targets;
+function planReaction(from, to, passType) {
+  const plan = reactToPass({
+    from, to, passType,
+    ours: State.ours, theirs: State.theirs, homes: State.homes,
+    styles: State.styles, startBall: State.startBall,
+  });
+  for (const [id, t] of plan.ours) State.reasons.set(id, t.why);
+  for (const [id, t] of plan.theirs) State.reasons.set(id, t.why);
+  return plan;
 }
 
 /* ============================ Animation ============================ */
@@ -279,19 +295,30 @@ const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
  * never presented mid-animation.
  */
 function animatePass(from, to, passType) {
-  const travelMs = clamp((dist(from, to) / SPEED[passType]) * 1000, 420, 1500);
+  const carry = from.id === to.id;
+  const travelMs = clamp((dist(from, to) / SPEED[passType]) * 1000, 420, carry ? 3200 : 1500);
   const settleMs = 520;
   const total = travelMs + settleMs;
 
-  const defTargets = defensiveTargets(to, to);
-  const supTargets = supportTargets(to, to.id);
+  const plan = planReaction(from, to, passType);
+  const defTargets = plan.theirs;
+  const supTargets = plan.ours;
   const startPos = new Map();
   [...State.ours, ...State.theirs].forEach((p) => startPos.set(p.id, { x: p.x, y: p.y }));
+
+  // The camera follows the play: widen the view so nobody walks off the board.
+  const v0 = Board.view;
+  const after = [...State.ours, ...State.theirs].map((p) => ({ ...p, ...(supTargets.get(p.id) || defTargets.get(p.id) || {}) }));
+  const fit = fitView(State.scenario, after);
+  const v1x0 = Math.min(v0.x, fit.x), v1y0 = Math.min(v0.y, fit.y);
+  const v1 = { x: v1x0, y: v1y0, w: Math.max(v0.x + v0.w, fit.x + fit.w) - v1x0, h: Math.max(v0.y + v0.h, fit.y + fit.h) - v1y0 };
+  const lerpView = (t) => ({ x: v0.x + (v1.x - v0.x) * t, y: v0.y + (v1.y - v0.y) * t, w: v0.w + (v1.w - v0.w) * t, h: v0.h + (v1.h - v0.h) * t });
 
   if (reducedMotion()) {
     for (const p of State.theirs) { const t = defTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     for (const p of State.ours) { const t = supTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     Board.moveBall(to.x, to.y);
+    Board.setView(v1);
     return Promise.resolve();
   }
 
@@ -307,17 +334,21 @@ function animatePass(from, to, passType) {
       // Players: react across the whole window, slightly lagging the ball.
       const pt = clamp((elapsed - 90) / (total - 90), 0, 1);
       const pe = easeInOut(pt);
+      Board.setView(lerpView(pe));
       for (const p of State.theirs) {
         const s = startPos.get(p.id), t = defTargets.get(p.id);
         if (t) Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
       }
       for (const p of State.ours) {
         const s = startPos.get(p.id), t = supTargets.get(p.id);
-        if (t) Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
+        if (!t) continue;
+        // On a carry the runner moves with the ball, not with the team's lag.
+        if (carry && p.id === to.id) Board.move(p, s.x + (t.x - s.x) * be, s.y + (t.y - s.y) * be);
+        else Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
       }
 
       if (elapsed < total) requestAnimationFrame(tick);
-      else { Board.moveBall(to.x, to.y); resolve(); }
+      else { if (carry) { const c = State.ours.find((p) => p.id === to.id); Board.move(c, to.x, to.y); } Board.moveBall(to.x, to.y); resolve(); }
     };
     requestAnimationFrame(tick);
   });
@@ -328,10 +359,25 @@ function animatePass(from, to, passType) {
 function loadScenario(id) {
   const s = SCENARIOS.find((x) => x.id === id) || SCENARIOS[0];
   State.scenario = s;
-  State.ours = s.ours.map((p) => ({ ...p }));
-  State.theirs = s.theirs.map((p) => ({ ...p }));
+  // Authored pictures sometimes stack two players on one spot. Nudge them
+  // apart once, so every marker can be seen and tapped; this nudged picture
+  // is the scenario's starting point everywhere (board, undo, review).
+  const spots = new Map([...s.ours, ...s.theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
+  separate(spots, new Set([s.startCarrier]));
+  State.startOurs = s.ours.map((p) => ({ ...p, ...spots.get(p.id) }));
+  State.startTheirs = s.theirs.map((p) => ({ ...p, ...spots.get(p.id) }));
+  State.ours = State.startOurs.map((p) => ({ ...p }));
+  State.theirs = State.startTheirs.map((p) => ({ ...p }));
   State.homes = new Map([...State.ours, ...State.theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
   State.carrierId = s.startCarrier;
+  State.styles = styleFor(s);
+  const sc = State.ours.find((p) => p.id === s.startCarrier);
+  State.startBall = { x: sc.x, y: sc.y };
+  resetReasons();
+  State.best = null;
+  State.carryMode = false;
+  State.history = [snapshot(State.ours, State.theirs, s.startCarrier)];
+  if ($('#boardCaption')) $('#boardCaption').hidden = true;
   State.sequence = [];
   State.submitted = false;
   State.analysis = null;
@@ -348,19 +394,36 @@ function loadScenario(id) {
   Board.drawBall({ x: c.x, y: c.y });
 
   renderScenarioHeader();
+  renderStyleChips();
+  $('.direction').innerHTML = `<i aria-hidden="true">${Board.orient.arrow}</i> ${Board.orient.direction}`;
   refreshBoardState();
   renderSequence();
   $('#analysis').hidden = true;
   $('#analysis').innerHTML = '';
   attachBoardHandlers();
+  if (s.lesson && State.briefedFor !== s.id) showBriefing(s);
+}
+
+/** Before the first move of a lesson: exactly what you are trying to do, and when you are done. */
+function showBriefing(s) {
+  State.briefedFor = s.id;
+  if (!$('#sheet')) return;
+  openSheet('Your mission', `
+    <p class="brief-lesson"><span class="objective-tag">Lesson</span> ${s.lesson.title}</p>
+    <ol class="brief-steps">
+      ${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}</b><span>${(() => { const t = i.label.split(':').slice(1).join(':').trim(); return t.charAt(0).toUpperCase() + t.slice(1); })()}.</span></li>`).join('')}
+    </ol>
+    <p class="brief-done">The checklist above the pitch ticks off as you go. <b>When all ${s.mission.items.length} are ticked, tap Finish.</b> You have up to ${s.maxActions || 5} actions: passes, or dribbles (tap the player on the ball, then tap open grass).</p>
+    <button class="btn btn-primary btn-block" id="briefStart">Start</button>`);
+  $('#briefStart').onclick = closeSheet;
 }
 
 /**
  * The scenario may declare a focus crop, but no player may ever be cut off:
  * the declared view is expanded until every marker on both teams fits.
  */
-function fitView(s) {
-  const all = [...s.ours, ...s.theirs].filter((p) => p.role !== 'keeper');
+function fitView(s, players) {
+  const all = (players || [...s.ours, ...s.theirs]).filter((p) => p.role !== 'keeper');
   const pad = 4.5;
   let x0 = Math.min(...all.map((p) => p.x)) - pad;
   let x1 = Math.max(...all.map((p) => p.x)) + pad;
@@ -376,12 +439,105 @@ function fitView(s) {
     x1 = Math.max(x1, z.x + z.w + 2); y1 = Math.max(y1, z.y + z.h + 2);
   }
   x0 = clamp(x0, 0, 105); x1 = clamp(x1, 0, 105);
+  // When the view reaches either end, show the goal behind the line too.
+  if (x0 <= 1) x0 = -2.6;
+  if (x1 >= 104) x1 = 107.6;
   y0 = clamp(y0, 0, 68); y1 = clamp(y1, 0, 68);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** Before any pass, every player is simply where the scenario put him. */
+function resetReasons() {
+  State.reasons = new Map();
+  const them = DEF_STYLES[State.styles.theirs];
+  for (const p of State.theirs) State.reasons.set(p.id, `Starting position. The opponent is playing a ${them.label.toLowerCase()}: tap the style chip above the pitch to see what that means.`);
+  for (const p of State.ours) State.reasons.set(p.id, 'Starting position for this scenario.');
+}
+
 const carrier = () => State.ours.find((p) => p.id === State.carrierId);
 const outfieldTeammates = () => State.ours.filter((p) => p.id !== State.carrierId);
+
+/** Ring the opponents who currently count as "drawn" by the ball. */
+function highlightDrawn(ids) {
+  $$('.l-theirs .player', Board.svg).forEach((n) => n.classList.toggle('drawn', ids.includes(n.dataset.id)));
+}
+
+/** The scenario objective in a few words, for the live tracker. */
+function goalShort(s) {
+  const o = s.objectiveCheck || {};
+  if (o.reachZone) return 'Get the ball into the green zone';
+  if (o.reachPlayer) { const p = s.ours.find((q) => q.id === o.reachPlayer); return `Get the ball to the ${p ? p.pos : 'target player'}`; }
+  if (o.minProgression != null) return `Move the ball ${o.minProgression}+ yd closer to goal`;
+  return 'Complete the objective';
+}
+
+const mission = () => (State.scenario.mission ? missionStatus(State.scenario.mission, State.history) : null);
+const goalMet = () => {
+  if (!State.sequence.length) return false;
+  const m = mission();
+  return m ? m.every((x) => x.done) : checkObjective(State.sequence, State.scenario);
+};
+
+/** Live tracker above the pitch: where you stand against the objective right now. */
+function renderGoalStatus() {
+  const box = $('#goalStatus');
+  if (!box) return;
+  const max = State.scenario.maxActions || 5;
+  const left = max - State.sequence.length;
+  const goal = goalShort(State.scenario);
+  let cls = 'todo', html;
+  if (State.submitted) { box.hidden = true; $$('.l-ours .player.target', Board.svg).forEach((n) => n.classList.remove('target')); return; }
+  box.hidden = false;
+  const m = mission();
+  highlightDrawn([]);
+  if (m) {
+    // Live count for "draw" items, with the drawn opponents ringed on the pitch.
+    const pic = State.history[State.history.length - 1];
+    const extra = {};
+    for (const item of State.scenario.mission.items) {
+      if (item.type !== 'draw') continue;
+      const st = m.find((x) => x.id === item.id);
+      if (st.done) continue;
+      const pr = drawProgress(item, pic);
+      highlightDrawn(pr.ids);
+      extra[item.id] = !pr.inHalf ? '' : ` ${Math.min(pr.count, pr.need)}/${pr.need}${pr.count >= pr.need && !pr.wide ? ' · go wide' : ''}`;
+    }
+    // Once the first step is done, light up the players the ball must reach next.
+    const targets = [];
+    for (const item of State.scenario.mission.items) {
+      if (item.type !== 'reach') continue;
+      const st = m.find((x) => x.id === item.id);
+      const ready = !item.after || (m.find((x) => x.id === item.after) || {}).done;
+      if (!st.done && ready) {
+        for (const p of State.ours) if (item.units.includes(unitOfPos(p.pos)) && p.id !== State.carrierId) targets.push(p.id);
+      }
+    }
+    $$('.l-ours .player', Board.svg).forEach((n) => n.classList.toggle('target', targets.includes(n.dataset.id)));
+    const items = m.map((x) => `<li class="${x.done ? 'done' : x.broken ? 'broken' : ''}"><i>${x.done ? '✓' : x.broken ? '✗' : ''}</i>${x.label.split(':')[0]}${extra[x.id] || ''}</li>`).join('');
+    const all = m.every((x) => x.done);
+    box.className = `goal-status mission ${all ? 'met' : m.some((x) => x.broken) ? 'out' : 'open'}`;
+    box.innerHTML = `<ul class="checklist">${items}</ul><span class="mission-left">${all ? 'Lesson complete. Finish now.' : `${left} action${left === 1 ? '' : 's'} left`}<br><u>What do these mean?</u></span>`;
+    box.onclick = () => openSheet('This lesson’s checklist', `
+      <p class="style-summary">${State.scenario.lesson.idea}</p>
+      ${State.scenario.mission.items.map((i) => `<div class="explain-item"><b>${i.label.split(':')[0]}</b><p>${(() => { const t = i.label.split(':').slice(1).join(':').trim(); return t.charAt(0).toUpperCase() + t.slice(1); })()}.</p><p class="muted small">${i.why}</p>${i.type === 'draw' ? '<p class="small">On the pitch, opponents who count as drawn get a white ring, and the checklist shows how many you have so far.</p>' : ''}</div>`).join('')}`);
+    return;
+  }
+  if (!State.sequence.length) {
+    html = `<b>🎯 ${goal} · up to ${max} actions</b><span>Pass or dribble. Most solutions need more than one action.</span>`;
+  } else if (goalMet()) {
+    cls = 'met';
+    html = `<b>✓ Goal reached</b><span>Finish now, or keep going if you can improve the position.</span>`;
+  } else if (left > 0) {
+    cls = 'open';
+    html = `<b>Not there yet · ${left} action${left === 1 ? '' : 's'} left</b><span>${goal}. Pass, or tap the player on the ball to dribble.</span>`;
+  } else {
+    cls = 'out';
+    html = `<b>No actions left</b><span>The goal was not reached. Finish to see how you did and watch the best sequence.</span>`;
+  }
+  box.className = `goal-status ${cls}`;
+  box.onclick = null;
+  box.innerHTML = html;
+}
 
 function refreshBoardState() {
   // While reviewing, the board is rewound to the opening picture, so the carrier
@@ -396,8 +552,18 @@ function refreshBoardState() {
   $('#carrierLabel').textContent = shown ? shown.pos : '—';
   $('#finishBtn').disabled = State.submitted || used === 0;
   $('#undoBtn').disabled = State.submitted || used === 0;
-  $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : 'Finish Sequence';
-  $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'Sequence in progress';
+  State.confirmFinish = false;
+  if (State.carryMode && (State.submitted || State.busy)) setCarryMode(false);
+  const met = goalMet();
+  $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : met ? 'Finish sequence ✓' : 'Finish sequence';
+  $('#finishBtn').classList.toggle('goal-met', met && !State.submitted);
+  $('#finishBtn').classList.remove('confirm');
+  renderGoalStatus();
+  refreshShootButton();
+  const gh = $('#goalHint');
+  const cc = State.ours.find((p) => p.id === shownCarrierId);
+  if (gh && cc) gh.textContent = `${Board.orient.arrow} Their goal · ${Math.round(distanceToGoal(cc))} yd from the ball`;
+  $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'In progress';
   $('#stateBadge').className = `badge ${State.submitted ? 'badge-review' : 'badge-live'}`;
   $('.action-bar').hidden = State.submitted;
   document.body.classList.toggle('no-action-bar', State.submitted);
@@ -429,6 +595,135 @@ async function playPass(receiver, passType) {
     result,
   });
   State.carrierId = receiver.id;
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
+  State.busy = false;
+  $('#board').classList.remove('busy');
+  refreshBoardState();
+  renderSequence();
+}
+
+/* ------------------------------ Shooting ------------------------------ */
+
+/** The number shown for an action: pass/carry success, or a shot's xG. */
+const actionPct = (st) => (st.result.kind === 'shot' ? `${st.result.xg.toFixed(2)} xG` : `${st.result.confidence}%`);
+
+function refreshShootButton() {
+  const btn = $('#shootBtn');
+  if (!btn) return;
+  const c = carrier();
+  const inRange = c && !State.submitted && distanceToGoal(c) <= SHOT_RANGE && c.x > 60;
+  btn.hidden = !inRange;
+  btn.disabled = State.busy;
+}
+
+/** First a look at the chance (like the pass preview), then the shot. */
+function previewShot() {
+  if (State.busy || State.submitted) return;
+  const c = carrier();
+  const r = evaluateShot(c, { defenders: State.theirs, teammates: State.ours });
+  previewOpen = true;
+  const box = $('#preview');
+  const band = r.xg >= 0.2 ? 'low' : r.xg >= 0.1 ? 'medium' : 'high';
+  box.innerHTML = `
+    <div class="preview-head"><strong>${c.pos} shoots</strong><button class="icon-btn" id="previewClose" aria-label="Close">✕</button></div>
+    <div class="preview-risk risk-${band}">
+      <b>${Math.round(r.xg * 100)}</b>
+      <span><em>${band === 'low' ? 'Good chance' : band === 'medium' ? 'Half-chance' : 'Low-quality shot'}</em>of 100 shots like this, about ${Math.round(r.xg * 100)} go in (${r.xg.toFixed(2)} xG)</span>
+    </div>
+    <ul class="shot-factors">${r.factors.map((f) => `<li class="${f.points > 0 ? 'pos' : f.points < 0 ? 'neg' : ''}"><b>${f.label}</b> ${f.detail}</li>`).join('')}</ul>
+    <div class="row-actions"><button class="btn btn-ghost" id="shotCancel">Keep the ball</button><button class="btn btn-primary" id="shotGo">Shoot</button></div>`;
+  box.hidden = false;
+  $('#previewClose').onclick = hidePreview;
+  $('#shotCancel').onclick = hidePreview;
+  $('#shotGo').onclick = () => { hidePreview(); playShot(); };
+}
+
+async function playShot() {
+  if (State.busy || State.submitted) return;
+  const max = State.scenario.maxActions || 5;
+  if (State.sequence.length >= max) { toast(`That is the action limit for this scenario (${max}).`); return; }
+  const c = carrier();
+  const result = evaluateShot(c, { defenders: State.theirs, teammates: State.ours });
+  State.busy = true;
+  $('#board').classList.add('busy');
+  refreshShootButton();
+  // The ball flies at the far side of the goal; the outcome is never simulated.
+  const aim = { x: 105.5, y: c.y < 34 ? 36.5 : 31.5 };
+  await animateBallTo(c, aim, 520);
+  const snap = { x: c.x, y: c.y, id: c.id, pos: c.pos };
+  State.sequence.push({ kind: 'shot', from: snap, to: snap, fromLabel: c.pos, toLabel: c.pos, result });
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
+  toast(`${Math.round(result.xg * 100)} in 100 shots like that go in (${result.xg.toFixed(2)} xG).`);
+  State.busy = false;
+  $('#board').classList.remove('busy');
+  renderSequence();
+  finishSequence(true); // a shot ends the move
+}
+
+function animateBallTo(from, to, ms) {
+  return new Promise((resolve) => {
+    if (reducedMotion()) { Board.moveBall(to.x, to.y); resolve(); return; }
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = clamp((now - t0) / ms, 0, 1);
+      Board.moveBall(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+      if (t < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/* ------------------------------ Carrying ------------------------------ */
+
+const CARRY_MAX = 15; // yards per carry: beyond that it is a solo run, not a carry
+
+function setCarryMode(on) {
+  State.carryMode = on && !State.submitted && !State.busy;
+  const c = carrier();
+  Board.showCarryRange(State.carryMode ? c : null, CARRY_MAX);
+  $('#board').classList.toggle('carry-mode', State.carryMode);
+  if (State.carryMode) toast('Dribble: tap where he should run with the ball (up to 15 yd). Tap him again to cancel.');
+}
+
+async function playCarry(point) {
+  if (State.busy || State.submitted) return;
+  const max = State.scenario.maxActions || 5;
+  if (State.sequence.length >= max) {
+    toast(`That is the action limit for this scenario (${max}). Finish the sequence to see the analysis.`);
+    return;
+  }
+  const from = carrier();
+  // Clamp to range and pitch, and stop short of running into an opponent.
+  let dx = point.x - from.x, dy = point.y - from.y;
+  let d = Math.hypot(dx, dy);
+  if (d < 2) { setCarryMode(false); return; }
+  if (d > CARRY_MAX) { dx *= CARRY_MAX / d; dy *= CARRY_MAX / d; d = CARRY_MAX; }
+  let dest = { x: clamp(from.x + dx, 1.5, 103.5), y: clamp(from.y + dy, 1.5, 66.5) };
+  for (const o of State.theirs) {
+    const gap = dist(dest, o);
+    if (gap < 2.6) {
+      const back = Math.max(0, dist(from, dest) - (2.6 - gap));
+      const dd = dist(from, dest) || 1;
+      dest = { x: from.x + ((dest.x - from.x) / dd) * back, y: from.y + ((dest.y - from.y) / dd) * back };
+    }
+  }
+  const result = evaluateCarry(from, dest, { defenders: State.theirs });
+  setCarryMode(false);
+  State.busy = true;
+  $('#board').classList.add('busy');
+  hidePreview();
+  const fromSnapshot = { x: from.x, y: from.y, id: from.id, pos: from.pos };
+  const target = { ...from, x: dest.x, y: dest.y };
+  await animatePass(from, target, 'carry');
+  State.sequence.push({
+    kind: 'carry',
+    from: fromSnapshot,
+    to: { x: dest.x, y: dest.y, id: from.id, pos: from.pos },
+    fromLabel: from.pos,
+    toLabel: from.pos,
+    result,
+  });
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
   State.busy = false;
   $('#board').classList.remove('busy');
   refreshBoardState();
@@ -440,23 +735,34 @@ function undo() {
   State.sequence.pop();
   // Rebuild deterministically from the scenario rather than reversing physics.
   const s = State.scenario;
-  State.ours = s.ours.map((p) => ({ ...p }));
-  State.theirs = s.theirs.map((p) => ({ ...p }));
+  State.ours = State.startOurs.map((p) => ({ ...p }));
+  State.theirs = State.startTheirs.map((p) => ({ ...p }));
+  Board.setView(fitView(s));
   Board.drawTeam('theirs', State.theirs, { className: 'them' });
   Board.drawTeam('ours', State.ours, { className: 'us' });
   State.carrierId = s.startCarrier;
+  resetReasons();
+  State.history = [snapshot(State.ours, State.theirs, s.startCarrier)];
   const replay = [...State.sequence];
   State.sequence = [];
   const c0 = carrier();
   Board.drawBall({ x: c0.x, y: c0.y });
   for (const step of replay) {
     const rec = State.ours.find((p) => p.id === step.to.id);
-    const defTargets = defensiveTargets(rec, rec);
-    const supTargets = supportTargets(rec, rec.id);
+    const target = step.kind === 'carry' ? { ...rec, x: step.to.x, y: step.to.y } : rec;
+    const plan = planReaction(carrier(), target, step.result.passType);
+    const defTargets = plan.theirs;
+    const supTargets = plan.ours;
     for (const p of State.theirs) { const t = defTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     for (const p of State.ours) { const t = supTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     State.carrierId = rec.id;
     State.sequence.push(step);
+    State.history.push(snapshot(State.ours, State.theirs, State.carrierId, step));
+  }
+  if (State.sequence.length) {
+    const a = fitView(s), b = fitView(s, [...State.ours, ...State.theirs]);
+    const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
+    Board.setView({ x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 });
   }
   const c = carrier();
   Board.moveBall(c.x, c.y);
@@ -465,9 +771,27 @@ function undo() {
   renderSequence();
 }
 
-function finishSequence() {
+function finishSequence(force) {
   if (State.submitted || !State.sequence.length) return;
-  const analysis = evaluateSequence(State.sequence, State.scenario);
+  const max = State.scenario.maxActions || 5;
+  // Stopping before the goal is allowed, but never by accident.
+  if (force !== true && !goalMet() && State.sequence.length < max && !State.confirmFinish) {
+    State.confirmFinish = true;
+    const btn = $('#finishBtn');
+    btn.textContent = 'Goal not reached · tap again to finish anyway';
+    btn.classList.add('confirm');
+    clearTimeout(State._confirmTimer);
+    State._confirmTimer = setTimeout(() => { if (!State.submitted) refreshBoardState(); }, 4000);
+    return;
+  }
+  clearTimeout(State._confirmTimer);
+  const analysis = evaluateSequence(State.sequence, State.scenario, { objectiveMet: goalMet() });
+  State.best = bestSequence({
+    scenario: State.scenario,
+    ours: State.startOurs.map((p) => ({ ...p })),
+    theirs: State.startTheirs.map((p) => ({ ...p })),
+    homes: State.homes, styles: State.styles, startBall: State.startBall,
+  });
   State.submitted = true;
   State.analysis = analysis;
 
@@ -491,8 +815,8 @@ function finishSequence() {
 function drawPostSubmissionOptions() {
   Board.clearArrows();
   const first = State.sequence[0];
-  const startOurs = State.scenario.ours.map((p) => ({ ...p }));
-  const startTheirs = State.scenario.theirs.map((p) => ({ ...p }));
+  const startOurs = State.startOurs.map((p) => ({ ...p }));
+  const startTheirs = State.startTheirs.map((p) => ({ ...p }));
   const startCarrier = startOurs.find((p) => p.id === State.scenario.startCarrier);
   const ranked = rankOptions(startCarrier, startOurs, startTheirs);
 
@@ -500,14 +824,16 @@ function drawPostSubmissionOptions() {
   // below describe THAT picture, and drawing them over the final, post-movement
   // board made them point at space that is no longer open.
   for (const p of State.ours) {
-    const home = State.scenario.ours.find((q) => q.id === p.id);
+    const home = State.startOurs.find((q) => q.id === p.id);
     if (home) Board.move(p, home.x, home.y);
   }
   for (const p of State.theirs) {
-    const home = State.scenario.theirs.find((q) => q.id === p.id);
+    const home = State.startTheirs.find((q) => q.id === p.id);
     if (home) Board.move(p, home.x, home.y);
   }
   Board.moveBall(startCarrier.x, startCarrier.y);
+  Board.setView(fitView(State.scenario));
+  resetReasons();
 
   const metaFor = (o) => o && ({
     from: startCarrier.pos, to: o.player.pos, confidence: o.confidence,
@@ -608,7 +934,23 @@ function attachBoardHandlers() {
     pressTimer = setTimeout(() => { showPreview(p); pressTimer = null; }, 380);
   };
   const up = (e) => {
-    if (State.busy || State.submitted) return;
+    if (State.busy) return;
+    // Opponents are not pass targets: a tap asks why he is standing there.
+    const oppNode = e.target.closest && e.target.closest('.l-theirs .player');
+    if (oppNode) {
+      const opp = State.theirs.find((p) => p.id === oppNode.dataset.id);
+      if (opp) showWhy(opp, 'them');
+      return;
+    }
+    if (State.submitted) return;
+    const tapped = playerFromEvent(e);
+    if (tapped && tapped.id === State.carrierId) { setCarryMode(!State.carryMode); return; }
+    if (State.carryMode && !tapped) {
+      const pt = Board.toPitch(e.clientX, e.clientY);
+      if (pt) playCarry(pt);
+      return;
+    }
+    if (State.carryMode && tapped) setCarryMode(false);
     const wasHold = pressTimer === null && previewOpen;
     clearTimeout(pressTimer);
     if (wasHold) { pressTarget = null; return; }
@@ -632,10 +974,15 @@ function showPreview(receiver) {
   const top = types[0];
   const m = top.metrics;
   const box = $('#preview');
+  const band = top.confidence >= 75 ? 'low' : top.confidence >= 55 ? 'medium' : 'high';
   box.innerHTML = `
     <div class="preview-head">
       <strong>${from.pos} → ${receiver.pos}</strong>
       <button class="icon-btn" id="previewClose" aria-label="Close preview">✕</button>
+    </div>
+    <div class="preview-risk risk-${band}">
+      <b>${top.confidence}%</b>
+      <span><em>${band === 'low' ? 'Low' : band === 'medium' ? 'Medium' : 'High'} risk</em>chance this ${top.label.toLowerCase()} gets through</span>
     </div>
     <div class="preview-grid">
       <div><span>Receiver separation</span><b>${m.effectiveSeparation} yd</b><em>on the ball's arrival</em></div>
@@ -652,12 +999,129 @@ function showPreview(receiver) {
           <span class="tval">${t.confidence}%</span>
         </button>`).join('')}
     </div>
+    <p class="preview-why"><b>Why he is there:</b> ${State.reasons.get(receiver.id) || ''}</p>
     <p class="preview-foot">Tap a pass type to play it, or release and tap the player to let the engine choose.</p>
   `;
   box.hidden = false;
   $('#previewClose').onclick = hidePreview;
   $$('.type-row', box).forEach((btn) => {
     btn.onclick = () => { hidePreview(); playPass(receiver, btn.dataset.type); };
+  });
+}
+
+/** Tap an opponent: who he is and why he is standing exactly there. */
+function showWhy(player, side) {
+  previewOpen = true;
+  const box = $('#preview');
+  const style = side === 'them' ? DEF_STYLES[State.styles.theirs] : ATT_STYLES[State.styles.ours];
+  box.innerHTML = `
+    <div class="preview-head">
+      <strong><span class="who ${side}">${side === 'them' ? 'Their' : 'Our'} ${player.pos}</span></strong>
+      <button class="icon-btn" id="previewClose" aria-label="Close">✕</button>
+    </div>
+    <p class="why-text">${State.reasons.get(player.id) || ''}</p>
+    <p class="preview-foot">${style.label}. Tap the style chip above the pitch for the full picture.</p>
+  `;
+  box.hidden = false;
+  $('#previewClose').onclick = hidePreview;
+}
+
+/** Which formation each team uses in this scenario (explicit, or read from the brief). */
+function formationsFor(s) {
+  const f = s.formations || {};
+  return {
+    ours: f.ours || '4-3-3',
+    theirs: f.theirs || formationFromText(s.context && s.context.opponent),
+  };
+}
+
+/**
+ * A small pitch showing one formation, with a toggle between its shape
+ * without the ball and with it. Players glide between the two so you can
+ * see who moves where, and why.
+ */
+function shapeCardHTML(formationId, side, phase) {
+  const f = formationById(formationId);
+  if (!f) return '';
+  const uid = `shape-${side}`;
+  return `
+    <div class="shape-card" id="${uid}" data-formation="${f.id}" data-side="${side}" data-phase="${phase}">
+      <div class="shape-head">
+        <b>${f.name}</b><span class="shape-level">Level ${f.level} · ${LEVEL_NAMES[f.level]}</span>
+      </div>
+      <div class="shape-toggle" role="tablist">
+        <button data-phase="oop" class="${phase === 'oop' ? 'on' : ''}">Without the ball</button>
+        <button data-phase="ip" class="${phase === 'ip' ? 'on' : ''}">With the ball</button>
+      </div>
+      <svg class="shape-pitch ${side}" viewBox="0 0 68 105" aria-label="${f.name} shape">
+        <rect x="0" y="0" width="68" height="105" class="sp-turf"/>
+        <rect x="0.4" y="0.4" width="67.2" height="104.2" class="sp-line"/>
+        <line x1="0.4" y1="52.5" x2="67.6" y2="52.5" class="sp-line"/>
+        <circle cx="34" cy="52.5" r="9.15" class="sp-line"/>
+        <rect x="13.85" y="0.4" width="40.3" height="16.5" class="sp-line"/>
+        <rect x="13.85" y="88.1" width="40.3" height="16.5" class="sp-line"/>
+        <g class="sp-players"></g>
+      </svg>
+      <p class="shape-phase-name"></p>
+      <p class="shape-how"></p>
+      <div class="shape-sw">
+        <div><h5>Strengths</h5><ul>${f.strengths.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+        <div><h5>Weaknesses</h5><ul>${f.weaknesses.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+      </div>
+    </div>`;
+}
+
+function mountShapeCard(card) {
+  if (!card) return;
+  const f = formationById(card.dataset.formation);
+  const side = card.dataset.side;
+  const g = card.querySelector('.sp-players');
+  const nodes = new Map();
+  const place = (phase, animate) => {
+    card.dataset.phase = phase;
+    card.querySelectorAll('.shape-toggle button').forEach((b) => b.classList.toggle('on', b.dataset.phase === phase));
+    card.querySelector('.shape-phase-name').textContent = phase === 'ip' ? f.ipName : f.oopName;
+    card.querySelector('.shape-how').textContent = phase === 'ip' ? f.ipHow : f.oopHow;
+    for (const p of shape(f.id, phase, side)) {
+      let n = nodes.get(p.id);
+      if (!n) {
+        n = document.createElementNS(SVG_NS, 'g');
+        n.setAttribute('class', `sp-player ${side}${p.role === 'keeper' ? ' keeper' : ''}`);
+        n.innerHTML = `<circle r="2.3"></circle><text y="0.75">${p.pos}</text>`;
+        g.appendChild(n);
+        nodes.set(p.id, n);
+      }
+      n.style.transition = animate && !reducedMotion() ? 'transform .7s ease' : 'none';
+      // Same orientation as the board: attacking up, our right on the right.
+      n.style.transform = `translate(${68 - p.y}px, ${105 - p.x}px)`;
+    }
+  };
+  place(card.dataset.phase, false);
+  card.querySelectorAll('.shape-toggle button').forEach((b) => { b.onclick = () => place(b.dataset.phase, true); });
+}
+
+/** The style chips: what each team is trying to do, in plain English. */
+function renderStyleChips() {
+  const them = DEF_STYLES[State.styles.theirs];
+  const us = ATT_STYLES[State.styles.ours];
+  const host = $('#styleChips');
+  if (!host) return;
+  const fm = formationsFor(State.scenario);
+  host.innerHTML = `
+    <button class="style-chip them" data-side="them"><i></i>Them: ${fm.theirs ? fm.theirs + ' ' : ''}${them.short}</button>
+    <button class="style-chip us" data-side="us"><i></i>Us: ${fm.ours} ${us.short}</button>`;
+  $$('.style-chip', host).forEach((b) => {
+    b.onclick = () => {
+      const isThem = b.dataset.side === 'them';
+      const st = isThem ? them : us;
+      const fid = isThem ? fm.theirs : fm.ours;
+      openSheet(`${isThem ? 'Them' : 'Us'}: ${fid ? fid + ', ' : ''}${st.label.toLowerCase()}`, `
+        ${fid ? shapeCardHTML(fid, isThem ? 'theirs' : 'ours', isThem ? 'oop' : 'ip') : ''}
+        <h4 class="style-title">How they play it: ${st.label}</h4>
+        <p class="style-summary">${st.summary}</p>
+        <p class="muted small">Shapes and styles are coaching models used to move every player on the board, not claims about any particular real team. Tap any opponent on the pitch to see why he moved.</p>`);
+      mountShapeCard($('#sheetBody .shape-card'));
+    };
   });
 }
 
@@ -677,21 +1141,75 @@ function renderScenarioHeader() {
   $('#ctxState').textContent = s.context.gameState;
   $('#ctxOpponent').textContent = s.context.opponent;
   $('#ctxInstruction').textContent = s.context.instruction;
-  $('#objectiveText').textContent = s.objective;
+  $('#objectiveText').textContent = s.lesson ? s.lesson.title : s.objective;
+  $('.objective-tag').textContent = s.lesson ? 'Lesson' : 'Goal';
+  const lessonBox = $('#lessonIdea');
+  if (lessonBox) {
+    lessonBox.hidden = !s.lesson;
+    if (s.lesson) lessonBox.innerHTML = `<p>${s.lesson.idea}</p>${s.lesson.shapes ? `<p class="lesson-shapes"><b>The shapes.</b> ${s.lesson.shapes} <span class="muted">Tap the team buttons above the pitch to see each shape with and without the ball.</span></p>` : ''}<ol class="lesson-list">${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}:</b> ${i.label.split(':').slice(1).join(':').trim()}</li>`).join('')}</ol>`;
+  }
 }
 
 function renderSequence() {
   const wrap = $('#sequence');
   if (!State.sequence.length) {
-    wrap.innerHTML = '<p class="empty">Tap a teammate to play a pass. Hold a teammate to preview the pass before you commit to it.</p>';
+    wrap.innerHTML = '<p class="empty">Tap a teammate to pass. Hold a teammate to preview the pass. Tap the player on the ball, then tap open grass, to dribble into space.</p>';
     return;
   }
   wrap.innerHTML = State.sequence.map((s, i) => `
     <div class="seq-step">
       <span class="seq-n">${i + 1}</span>
-      <span class="seq-body"><b>${s.fromLabel} → ${s.toLabel}</b><em>${s.result.passTypeLabel}</em></span>
-      <span class="seq-pct${s.result.confidence < 45 ? ' risky' : ''}">${State.submitted ? s.result.confidence + '%' : '•'}</span>
+      <span class="seq-body"><b>${s.kind === 'carry' ? `${s.fromLabel} runs ${s.result.metrics.passDistance} yd` : s.kind === 'shot' ? `${s.fromLabel} shoots from ${s.result.metrics.passDistance} yd` : `${s.fromLabel} → ${s.toLabel}`}</b><em>${s.result.passTypeLabel}</em></span>
+      <span class="seq-pct${s.kind !== 'shot' && s.result.confidence < 45 ? ' risky' : ''}">${State.submitted ? actionPct(s) : '•'}</span>
     </div>`).join('');
+}
+
+/** The lesson checklist, item by item, with what happened and why it matters. */
+function lessonDebrief(a) {
+  const s = State.scenario;
+  if (!s.lesson) return '';
+  const m = missionStatus(s.mission, State.history);
+  const line = s.lesson.debrief[a.verdict === 'success' ? 'success' : a.verdict === 'lost' ? 'lost' : 'partial'];
+  return `
+    <section class="debrief">
+      <h4>Lesson: ${s.lesson.title}</h4>
+      <ul class="debrief-items">
+        ${m.map((x) => `<li class="${x.done ? 'done' : 'missed'}"><i>${x.done ? '✓' : '✗'}</i><div><b>${x.label}</b><p>${x.detail}</p><em>${x.why}</em></div></li>`).join('')}
+      </ul>
+      <p class="debrief-coach">${line}</p>
+    </section>`;
+}
+
+/** Said plainly when the learner stopped short with passes still in hand. */
+function earlyStopNote(a) {
+  const max = State.scenario.maxActions || 5;
+  const n = State.sequence.length;
+  if (a.verdict === 'success' || n >= max || State.scenario.lesson || State.sequence.some((x) => x.kind === 'shot')) return '';
+  const left = max - n;
+  return `<li class="note note-warn"><b>You stopped after ${n} action${n === 1 ? '' : 's'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
+}
+
+/** The engine's best full sequence from the opening picture, next to yours. */
+function bestSequenceCard(a) {
+  const b = State.best;
+  if (!b || !b.sequence.length) return '';
+  const steps = b.sequence.map((st, i) => `
+    <li><span class="bs-n">${i + 1}</span><span class="bs-body"><b>${st.kind === 'carry' ? `${st.fromLabel} runs ${st.result.metrics.passDistance} yd` : st.kind === 'shot' ? `${st.fromLabel} shoots` : `${st.fromLabel} → ${st.toLabel}`}</b><em>${st.result.passTypeLabel}</em></span><span class="bs-pct${st.kind !== 'shot' && st.result.confidence < 50 ? ' risky' : ''}">${actionPct(st)}</span></li>`).join('');
+  return `
+    <section class="best-seq">
+      <div class="best-head">
+        <h4>Best sequence the engine found</h4>
+        <span class="best-rating">${b.analysis.rating}<em>rating</em></span>
+      </div>
+      <p class="best-compare">Yours: ${a.summary.passes} action${a.summary.passes === 1 ? '' : 's'}, rated ${a.rating}. Best found: ${b.sequence.length} action${b.sequence.length === 1 ? '' : 's'}, rated ${b.analysis.rating}${b.objectiveMet ? ', objective met' : ''}.</p>
+      <ol class="best-steps">${steps}</ol>
+      ${b.objectiveMet ? '' : '<p class="best-note">Even the best route found here does not fully reach the goal, so this scenario is genuinely hard. Some of these goals need a pass into a teammate\'s run, which the board cannot play yet.</p>'}
+      <div class="replay-row">
+        <button class="btn btn-ghost" id="watchMineBtn">▶ Replay mine</button>
+        <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best</button>
+      </div>
+      <p class="best-foot">Played with the same scoring and the same defensive movement as your own passes. It is the strongest route the engine found, not the only good answer.</p>
+    </section>`;
 }
 
 function renderAnalysis(a) {
@@ -720,14 +1238,14 @@ function renderAnalysis(a) {
       </div>
     </div>
 
+    ${lessonDebrief(a)}
     <ul class="notes">
+      ${earlyStopNote(a)}
       ${a.notes.map((n) => `<li class="note note-${n.tone}">${n.text}</li>`).join('')}
     </ul>
 
-    <div class="analysis-actions analysis-actions-watch">
-      <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best route</button>
-    </div>
-    <p class="watch-hint">Tap any coloured line on the pitch — or a swatch in the key — to see that pass and its confidence.</p>
+    ${bestSequenceCard(a)}
+    <p class="watch-hint">The arrows on the pitch show the options from the opening picture. Tap any coloured line, or a swatch in the key, to see that pass and its confidence.</p>
 
     <p class="reveal-lead">Three things sit underneath, in the order most people want them. Open only what you need.</p>
 
@@ -741,12 +1259,16 @@ function renderAnalysis(a) {
         <p class="why-scope">This explains <b>each individual pass</b> you played, then the sequence as a whole. Percentages are tactical estimates produced by the published scoring model — not measured probabilities.</p>
         ${State.sequence.map((s, i) => `
           <div class="why-pass">
-            <h4>Pass ${i + 1}: ${s.fromLabel} → ${s.toLabel} <span class="why-pct">${s.result.confidence}%</span></h4>
-            <p class="why-type">${s.result.passTypeLabel} · ${s.result.metrics.passDistance} yd at ${speed(SPEED[s.result.passType])} · ${s.result.metrics.travelTime}s travel · receiver keeps ${s.result.metrics.effectiveSeparation} yd</p>
+            <h4>${s.kind === 'carry' ? `Action ${i + 1}: ${s.fromLabel} runs with the ball` : s.kind === 'shot' ? `Action ${i + 1}: ${s.fromLabel} shoots` : `Action ${i + 1}: ${s.fromLabel} → ${s.toLabel}`} <span class="why-pct">${actionPct(s)}</span></h4>
+            <p class="why-type">${s.kind === 'shot'
+              ? `Shot · ${s.result.metrics.passDistance} yd out · ${s.result.metrics.angleDeg}° of goal to aim at · about ${Math.round(s.result.xg * 100)} in 100 go in`
+              : s.kind === 'carry'
+              ? `Carry · ${s.result.metrics.passDistance} yd at ${speed(SPEED.carry)} · ${s.result.metrics.travelTime}s · about ${s.result.metrics.effectiveSeparation} yd of space when he arrives`
+              : `${s.result.passTypeLabel} · ${s.result.metrics.passDistance} yd at ${speed(SPEED[s.result.passType])} · ${s.result.metrics.travelTime}s travel · receiver keeps ${s.result.metrics.effectiveSeparation} yd`}</p>
             <ul class="factors">
               ${s.result.factors.map((f) => `
                 <li class="${f.points >= 0 ? 'pos' : 'neg'}">
-                  <span class="fpts">${f.points > 0 ? '+' : ''}${f.points}</span>
+                  <span class="fpts">${s.kind === 'shot' ? (f.points > 0 ? '▲' : f.points < 0 ? '▼' : '•') : `${f.points > 0 ? '+' : ''}${f.points}`}</span>
                   <span class="fbody"><b>${f.label}</b><em>${f.detail}</em></span>
                 </li>`).join('')}
             </ul>
@@ -831,7 +1353,8 @@ function renderAnalysis(a) {
       if (open) btn.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
     };
   }
-  $('#watchBestBtn').onclick = playBestRoute;
+  if ($('#watchBestBtn')) $('#watchBestBtn').onclick = () => playSequence('best');
+  if ($('#watchMineBtn')) $('#watchMineBtn').onclick = () => playSequence('mine');
   $('#retryBtn').onclick = () => loadScenario(State.scenario.id);
   $('#nextScenarioBtn').onclick = () => {
     const i = SCENARIOS.findIndex((s) => s.id === State.scenario.id);
@@ -845,35 +1368,73 @@ function renderAnalysis(a) {
  * the ball travel and the defence react rather than reading a static arrow.
  * Restores the opening picture and the arrows when it finishes.
  */
-async function playBestRoute() {
-  const ranked = State._ranked;
-  if (!ranked || !ranked.primary || State.busy) return;
-
-  const btn = $('#watchBestBtn');
+/**
+ * Replays a full sequence on the board from the opening picture, action by
+ * action, with a caption: either yours ('mine') or the engine's best ('best').
+ * Both use the same movement, so the two can be compared directly.
+ */
+async function playSequence(which) {
+  const b = State.best;
+  const steps = which === 'mine' ? State.sequence : b && b.sequence;
+  if (!steps || !steps.length || State.busy) return;
+  const btns = ['#watchBestBtn', '#watchMineBtn'].map((id) => $(id)).filter(Boolean);
+  const btn = which === 'mine' ? $('#watchMineBtn') : $('#watchBestBtn');
+  const label = which === 'mine' ? 'Your sequence' : 'Best sequence';
+  const cap = $('#boardCaption');
   State.busy = true;
   $('#board').classList.add('busy');
-  if (btn) { btn.disabled = true; btn.textContent = 'Playing…'; }
+  btns.forEach((x) => { x.disabled = true; });
+  if (btn) btn.textContent = 'Playing…';
+  $('#board').scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
 
-  // Clear the arrows so nothing overlays the demonstration.
+  // Back to the opening picture with nothing drawn over it.
   Board.clearArrows();
   $('#routeKey').hidden = true;
+  for (const p of State.ours) { const h = State.startOurs.find((q) => q.id === p.id); Board.move(p, h.x, h.y); }
+  for (const p of State.theirs) { const h = State.startTheirs.find((q) => q.id === p.id); Board.move(p, h.x, h.y); }
+  Board.setView(fitView(State.scenario));
+  let carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
+  Board.setCarrier(carrierNode.id);
+  Board.moveBall(carrierNode.x, carrierNode.y);
+  cap.hidden = false;
+  cap.className = `board-caption ${which}`;
+  cap.innerHTML = `<b>${label}</b> from the opening picture`;
+  await new Promise((r) => setTimeout(r, 700));
 
-  const carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
-  const receiver = State.ours.find((p) => p.id === ranked.primary.player.id);
-  if (carrierNode && receiver) {
-    Board.setCarrier(carrierNode.id);
-    Board.moveBall(carrierNode.x, carrierNode.y);
-    await new Promise((r) => setTimeout(r, 450));
-    await animatePass(carrierNode, receiver, ranked.primary.passType);
-    Board.setCarrier(receiver.id);
-    await new Promise((r) => setTimeout(r, 700));
+  for (let i = 0; i < steps.length; i++) {
+    const st = steps[i];
+    const node = State.ours.find((p) => p.id === st.to.id);
+    const head = `<b>${label} · ${i + 1} of ${steps.length}</b>`;
+    if (st.kind === 'shot') {
+      cap.innerHTML = `${head} ${st.fromLabel} shoots · ${st.result.xg.toFixed(2)} xG (about ${Math.round(st.result.xg * 100)} in 100 go in)`;
+      await animateBallTo(carrierNode, { x: 105.5, y: carrierNode.y < 34 ? 36.5 : 31.5 }, 520);
+      await new Promise((r) => setTimeout(r, 900));
+      continue;
+    }
+    const receiver = st.kind === 'carry' ? { ...node, x: st.to.x, y: st.to.y } : node;
+    cap.innerHTML = st.kind === 'carry'
+      ? `${head} ${st.fromLabel} runs ${st.result.metrics.passDistance} yd with the ball · ${st.result.confidence}%`
+      : `${head} ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
+    await animatePass(carrierNode, receiver, st.result.passType);
+    Board.setCarrier(node.id);
+    carrierNode = node;
+    await new Promise((r) => setTimeout(r, 650));
   }
+  const done = which === 'mine'
+    ? (State.analysis.verdict === 'success' ? '<b>✓ You completed it</b> That was your sequence.' : `<b>End of your sequence</b> ${State.analysis.headline}`)
+    : (b.objectiveMet ? '<b>✓ Objective reached</b> That is the best sequence the engine found.' : '<b>End of the best sequence</b> The closest the engine got to the goal.');
+  cap.innerHTML = done;
+  await new Promise((r) => setTimeout(r, 1500));
+  cap.hidden = true;
 
-  // Put the opening picture back and restore the arrows.
+  // Restore the review picture and its arrows.
   drawPostSubmissionOptions();
+  refreshBoardState();
   State.busy = false;
   $('#board').classList.remove('busy');
-  if (btn) { btn.disabled = false; btn.textContent = 'Watch the best route again'; }
+  btns.forEach((x) => { x.disabled = false; });
+  if ($('#watchMineBtn')) $('#watchMineBtn').textContent = '▶ Replay mine';
+  if ($('#watchBestBtn')) $('#watchBestBtn').textContent = '▶ Watch the best';
 }
 
 /* ---------------------------- Profile ---------------------------- */
@@ -1041,6 +1602,7 @@ function renderScenarioPicker() {
 /* ---------------------------- Chrome ---------------------------- */
 
 function switchTab(name) {
+  document.body.dataset.tab = name;
   $$('.screen').forEach((s) => { s.hidden = s.dataset.screen !== name; });
   $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   if (name === 'profile') renderProfile();
@@ -1080,7 +1642,14 @@ function boot() {
   Board.svg.insertBefore(defs, Board.svg.firstChild);
 
   $$('.tab').forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
-  $('#finishBtn').onclick = finishSequence;
+  // Feature modules switch screens themselves; record the active tab for all of them
+  // so the train-only status badge never shows on another screen.
+  $('.tabbar').addEventListener('click', (e) => {
+    const t = e.target.closest('.tab');
+    if (t) document.body.dataset.tab = t.dataset.tab;
+  });
+  $('#finishBtn').onclick = () => finishSequence();
+  $('#shootBtn').onclick = previewShot;
   $('#undoBtn').onclick = undo;
   $('#restartBtn').onclick = () => loadScenario(State.scenario.id);
   $('#pickerBtn').onclick = () => { renderScenarioPicker(); openSheet('Choose a scenario', $('#scenarioPickerHost').innerHTML); $('#sheetBody').innerHTML = ''; $('#sheetBody').appendChild($('#scenarioPicker')); };

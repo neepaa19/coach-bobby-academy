@@ -16,30 +16,33 @@ const squad = (rows) =>
 
 const opp442MidBlock = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 88, 14], ['o-rcb', 'RCB', 90, 27], ['o-lcb', 'LCB', 90, 41], ['o-lb', 'LB', 88, 54],
-  ['o-rm', 'RM', 74, 15], ['o-rcm', 'RCM', 74, 28], ['o-lcm', 'LCM', 74, 40], ['o-lm', 'LM', 74, 53],
-  ['o-rs', 'ST', 60, 29], ['o-ls', 'ST', 60, 39],
+  ['o-lb', 'LB', 88, 14], ['o-lcb', 'LCB', 90, 27], ['o-rcb', 'RCB', 90, 41], ['o-rb', 'RB', 88, 54],
+  ['o-lm', 'LM', 74, 15], ['o-lcm', 'LCM', 74, 28], ['o-rcm', 'RCM', 74, 40], ['o-rm', 'RM', 74, 53],
+  ['o-ls', 'ST', 60, 29], ['o-rs', 'ST', 60, 39],
 ]);
 
+// A pressing team pushes its back line up behind the press. The original
+// shape left a 35-yard hole between midfield and defence that no real
+// pressing side would leave; the back four now sit just past halfway.
 const opp433HighPress = squad([
-  ['o-gk', 'GK', 100, 34, 'keeper'],
-  ['o-rb', 'RB', 74, 12], ['o-rcb', 'RCB', 78, 28], ['o-lcb', 'LCB', 78, 40], ['o-lb', 'LB', 74, 56],
-  ['o-dm', 'DM', 62, 34], ['o-rcm', 'RCM', 52, 25], ['o-lcm', 'LCM', 52, 43],
-  ['o-rw', 'RW', 34, 17], ['o-st', 'ST', 30, 34], ['o-lw', 'LW', 34, 51],
+  ['o-gk', 'GK', 92, 34, 'keeper'],
+  ['o-lb', 'LB', 64, 12], ['o-lcb', 'LCB', 67, 28], ['o-rcb', 'RCB', 67, 40], ['o-rb', 'RB', 64, 56],
+  ['o-dm', 'DM', 62, 34], ['o-lcm', 'LCM', 52, 25], ['o-rcm', 'RCM', 52, 43],
+  ['o-lw', 'LW', 34, 17], ['o-st', 'ST', 30, 34], ['o-rw', 'RW', 34, 51],
 ]);
 
 const oppLowBlock = squad([
   ['o-gk', 'GK', 102, 34, 'keeper'],
-  ['o-rb', 'RB', 94, 18], ['o-rcb', 'RCB', 96, 29], ['o-lcb', 'LCB', 96, 39], ['o-lb', 'LB', 94, 50],
-  ['o-rm', 'RM', 86, 20], ['o-rcm', 'RCM', 87, 30], ['o-lcm', 'LCM', 87, 38], ['o-lm', 'LM', 86, 48],
+  ['o-lb', 'LB', 94, 18], ['o-lcb', 'LCB', 96, 29], ['o-rcb', 'RCB', 96, 39], ['o-rb', 'RB', 94, 50],
+  ['o-lm', 'LM', 86, 20], ['o-lcm', 'LCM', 87, 30], ['o-rcm', 'RCM', 87, 38], ['o-rm', 'RM', 86, 48],
   ['o-am', 'AM', 78, 34], ['o-st', 'ST', 68, 34],
 ]);
 
 const oppTransition = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 70, 12], ['o-rcb', 'RCB', 82, 30], ['o-lcb', 'LCB', 84, 41], ['o-lb', 'LB', 68, 58],
-  ['o-dm', 'DM', 66, 33], ['o-rcm', 'RCM', 50, 24], ['o-lcm', 'LCM', 48, 44],
-  ['o-rw', 'RW', 40, 14], ['o-st', 'ST', 38, 36], ['o-lw', 'LW', 42, 54],
+  ['o-lb', 'LB', 70, 12], ['o-lcb', 'LCB', 82, 30], ['o-rcb', 'RCB', 84, 41], ['o-rb', 'RB', 68, 58],
+  ['o-dm', 'DM', 66, 33], ['o-lcm', 'LCM', 50, 24], ['o-rcm', 'RCM', 48, 44],
+  ['o-lw', 'LW', 40, 14], ['o-st', 'ST', 38, 36], ['o-rw', 'RW', 42, 54],
 ]);
 
 /* ---------------------------- Scenarios ---------------------------- */
@@ -57,9 +60,35 @@ export const SCENARIOS = [
       opponent: 'Aggressive 4-3-3 press, front three man-marking the back four',
       instruction: 'They press with three and leave their midfield stepping high. Find the pass that takes their front line out of the game.',
     },
-    objective: 'Get the ball to a midfielder beyond the opponent’s front three, with the ball still under control.',
-    objectiveCheck: { reachZone: { x: 42, y: 8, w: 26, h: 52 } },
-    maxActions: 4,
+    objective: 'Draw their press to one side, break past it to your front three, and turn it into a chance, without taking a reckless risk.',
+    formations: { ours: '4-3-3', theirs: '4-3-3' },
+    lesson: {
+      title: 'Beating a press: draw it, break it, punish it',
+      shapes: 'Both teams line up in a 4-3-3, but they look very different. Theirs, without the ball, is a high press: the front three jump onto your back line and the midfield three step up behind them. Yours, with the ball, builds from the back: a back four with the holding midfielder in front, the two central midfielders higher, and the front three stretching their back line. Notice what their press leaves behind it: space between their midfield and defence.',
+      idea: 'A pressing team commits players toward the ball. Every player who steps up to press is one fewer covering the space behind him. So you do not run away from the press: you invite it to one side, and when enough of them have come, you move the ball past them quickly, toward the space they just left.',
+      debrief: {
+        success: 'That is the pattern: you let them come, they committed players to one side, and the ball went past them before they could recover. Notice how much space your forwards had once the press was behind the ball.',
+        partial: 'Look at which part of the checklist was missing. Breaking the press works because of the drawing part. Going forward before they have committed players means attacking a press that is still organised.',
+        lost: 'The press won this one. Against a press the riskiest moment is a pass into a player who is already marked. The safer route is usually a pass that pulls one more presser out of shape first.',
+      },
+    },
+    mission: {
+      items: [
+        { id: 'draw', type: 'draw', count: 3, radius: 20, wide: true, maxX: 52.5,
+          label: 'Draw the press: let 3 of their forwards or midfielders come at the ball, out wide in your half',
+          why: 'Pressing players run at the ball to win it back. Every one who does has left the space he was guarding. Get three of them chasing the ball near a touchline (a pass to your full-back, or letting him dribble up the line, usually does it) and the middle and far side open up behind them.' },
+        { id: 'break', type: 'reach', units: ['front'], minX: 52.5, after: 'draw',
+          label: 'Break it: then get the ball to your RW, ST or LW in their half',
+          why: 'Once the press has committed, the fastest way to punish it is to get the ball beyond it, to the players it left behind.' },
+        { id: 'chance', type: 'chance', after: 'break', minXg: 0.12, maxDefenders: 4,
+          label: 'Create a chance: take a good shot (12 in 100 or better), or get a counterattack with as many of your players as theirs ahead of the ball',
+          why: 'Beating a press only matters if it leads somewhere. The space the press left behind is where the chance is: attack it before they get back.' },
+        { id: 'safe', type: 'safe', behind: 3, minConfidence: 55, fromX: 40,
+          label: 'Stay safe: keep 3 players behind the ball, and no action under 55%',
+          why: 'Beating a press is pointless if one bad pass gives them a counterattack. Keep enough players back and do not gamble.' },
+      ],
+    },
+    maxActions: 6,
     concepts: ['buildup', 'playing-through-pressure', 'breaking-lines', 'creating-a-free-player'],
     view: { x: 0, y: 0, w: 78, h: 68 },
     startCarrier: 'u-rcb',
@@ -67,7 +96,7 @@ export const SCENARIOS = [
       ['u-gk', 'GK', 8, 34, 'keeper'],
       ['u-rb', 'RB', 26, 8], ['u-rcb', 'RCB', 20, 26], ['u-lcb', 'LCB', 20, 42], ['u-lb', 'LB', 26, 60],
       ['u-dm', 'DM', 34, 34], ['u-rcm', 'RCM', 46, 22], ['u-lcm', 'LCM', 46, 46],
-      ['u-rw', 'RW', 62, 8], ['u-st', 'ST', 64, 30], ['u-lw', 'LW', 62, 60],
+      ['u-rw', 'RW', 60, 8], ['u-st', 'ST', 60, 32], ['u-lw', 'LW', 60, 60],
     ]),
     theirs: opp433HighPress,
   },

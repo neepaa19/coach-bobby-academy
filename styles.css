@@ -619,3 +619,287 @@ li.empty { list-style: none; padding: 12px 0; }
 .dir-hit:active { background: rgba(53,211,165,.12); }
 .dir-hit .dir-club { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
 .dir-hit .dir-club em { font-style: normal; font-size: .72rem; color: var(--dim); }
+
+/* =====================================================================
+   Revamp — pitch-first train screen (November 2026)
+   The board is the content. The scenario card shrinks to a title, a
+   one-line goal and a collapsed brief, and on a phone the pitch is drawn
+   vertically so it is nearly twice the size and clears the Finish bar.
+   ===================================================================== */
+
+.scenario-card { padding: 12px 14px; }
+.scenario-card .scenario-head h2 { font-size: 1.04rem; }
+.scenario-card .scenario-head p { font-size: .8rem; }
+.scenario-card .objective {
+  margin-top: 8px; padding: 8px 10px; border-radius: 10px;
+  font-size: .86rem; font-weight: 550; line-height: 1.35;
+}
+.scenario-card .objective-tag { display: inline; margin: 0 4px 0 0; font-size: .64rem; }
+.scenario-card .brief summary { padding-top: 8px; font-size: .82rem; }
+
+.board-card { padding: 8px 8px 10px; }
+.board-meta { margin: 2px 4px 6px; }
+.pitch { max-height: calc(100svh - 300px); margin: 0 auto; }
+.board[data-orient="vertical"] .pitch { width: 100%; }
+
+.style-chips { display: flex; gap: 6px; margin: 0 2px 6px; flex-wrap: wrap; }
+.style-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.04); color: var(--text); font: inherit; font-size: .74rem; font-weight: 650; cursor: pointer;
+}
+.style-chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.style-chip.them i { background: #f07a45; }
+.style-chip.us i { background: #6fb4ff; }
+.style-summary { margin-bottom: 10px; line-height: 1.5; }
+
+/* Markers: two teams that cannot be confused. Ours light with dark text,
+   theirs deep orange with white text. */
+.player .marker { stroke: rgba(0,0,0,.5); stroke-width: .24; }
+.player .plabel { font-size: 1.85px; }
+.player .plabel.long { font-size: 1.45px; letter-spacing: 0; }
+.l-theirs .marker { fill: #f07a45; }
+.l-theirs .plabel { fill: #ffffff; }
+.l-theirs .keeper .marker { fill: #ffd2b8; }
+.l-theirs .keeper .plabel { fill: #3a1a06; }
+.l-theirs .player { cursor: help; }
+.dot.them { background: #f07a45; }
+
+.preview-why { margin-top: 10px; font-size: .84rem; color: var(--muted); }
+.preview-why b { color: var(--text); }
+.why-text { font-size: .92rem; line-height: 1.5; }
+.who.them { color: #ffb08a; }
+.who.us { color: #9fcbff; }
+
+/* The status badge describes the training board only. */
+body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
+
+@media (max-width: 700px) {
+  .appbar { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px; }
+  .appbar p { display: none; }
+  .crest { width: 28px; height: 28px; border-radius: 8px; }
+  .crest::after { inset: 7px; }
+  main { padding-top: 10px; }
+  .card { margin-bottom: 10px; }
+  .scenario-card .scenario-head { align-items: center; }
+  .scenario-card .scenario-head p { display: none; }
+  .scenario-card .btn-sm { min-height: 40px; padding: 0 12px; }
+  .scenario-card .brief { margin-top: 6px; padding-top: 0; border-top: 0; }
+  .scenario-card .brief summary { padding-top: 4px; }
+  .board-meta { flex-wrap: nowrap; }
+  .direction, .meta-item { font-size: .72rem; white-space: nowrap; }
+  .meta-right { gap: 10px; }
+  /* Header + scenario card + chips + Finish bar + tab bar: the pitch gets the rest. */
+  .pitch { max-height: calc(100svh - 385px); }
+}
+
+/* ------------------- Goal tracker, finish states, best sequence ------------------- */
+.goal-status {
+  margin: 0 2px 6px; padding: 7px 10px; border-radius: 10px; font-size: .8rem; line-height: 1.35;
+  border: 1px solid var(--line); background: rgba(255,255,255,.03);
+}
+.goal-status b { display: block; font-size: .84rem; }
+.goal-status span { color: var(--muted); }
+.goal-status.todo { border-color: rgba(53,211,165,.3); }
+.goal-status.open { border-color: rgba(255,194,71,.45); background: rgba(255,194,71,.07); }
+.goal-status.open b { color: var(--warn); }
+.goal-status.met { border-color: rgba(53,211,165,.6); background: rgba(53,211,165,.12); }
+.goal-status.met b { color: var(--accent); }
+.goal-status.out { border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.07); }
+
+/* Before the goal is reached Finish is a quiet button; once reached it lights up. */
+.btn-finish:not(:disabled):not(.goal-met) {
+  background: rgba(255,255,255,.08); color: var(--text); box-shadow: none; border: 1px solid var(--line);
+}
+.btn-finish.confirm { background: rgba(255,194,71,.18) !important; color: var(--warn) !important; border-color: rgba(255,194,71,.5) !important; font-size: .92rem; }
+
+.board-caption {
+  margin: 0 2px 6px; padding: 8px 10px; border-radius: 10px; font-size: .84rem;
+  background: rgba(53,211,165,.12); border: 1px solid rgba(53,211,165,.45);
+}
+.board-caption b { color: var(--accent); margin-right: 6px; }
+
+.best-seq { margin: 14px 0 6px; padding: 14px; border-radius: 12px; border: 1px solid rgba(53,211,165,.35); background: rgba(53,211,165,.06); }
+.best-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.best-head h4 { font-size: .98rem; }
+.best-rating { font-size: 1.3rem; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.best-rating em { font-style: normal; font-size: .62rem; color: var(--dim); text-transform: uppercase; margin-left: 4px; letter-spacing: .05em; }
+.best-compare { font-size: .84rem; color: var(--muted); margin: 4px 0 10px; }
+.best-steps { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.best-steps li { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: center; background: rgba(0,0,0,.18); border-radius: 10px; padding: 8px 10px; }
+.bs-n { width: 22px; height: 22px; border-radius: 50%; background: rgba(53,211,165,.22); color: var(--accent); font-size: .74rem; font-weight: 800; display: grid; place-items: center; }
+.bs-body b { display: block; font-size: .9rem; }
+.bs-body em { font-style: normal; font-size: .72rem; color: var(--dim); }
+.bs-pct { font-weight: 800; font-variant-numeric: tabular-nums; }
+.bs-pct.risky { color: var(--warn); }
+.best-note { font-size: .8rem; color: var(--warn); margin-bottom: 10px; }
+.best-foot { font-size: .74rem; color: var(--dim); margin-top: 8px; }
+.btn-block { width: 100%; }
+
+/* Dribble mode: the reachable area is drawn around the player on the ball. */
+.carry-ring { fill: rgba(255,255,255,.07); stroke: rgba(255,255,255,.75); stroke-width: .3; stroke-dasharray: 1.2 .9; pointer-events: none; }
+.board.carry-mode { outline: 2px solid rgba(255,255,255,.55); outline-offset: -2px; cursor: crosshair; }
+
+@media (max-width: 700px) {
+  /* One line of status on a phone; the detail lives in the legend and the toast. */
+  .goal-status { padding: 6px 10px; }
+  .goal-status span { display: none; }
+  .goal-status b { font-size: .8rem; }
+  .board-meta { margin-bottom: 4px; }
+  .pitch { max-height: calc(100svh - 395px); }
+}
+
+/* ---------------------------- Lessons ---------------------------- */
+.goal-status.mission { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.checklist li { display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 650; color: var(--muted); }
+.checklist li i { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--dim); display: inline-grid; place-items: center; font-style: normal; font-size: .66rem; }
+.checklist li.done { color: var(--accent); }
+.checklist li.done i { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.checklist li.broken { color: var(--danger); }
+.checklist li.broken i { border-color: var(--danger); color: var(--danger); }
+.goal-status.mission span.mission-left { display: inline; font-size: .72rem; color: var(--dim); white-space: nowrap; }
+.lesson-idea { margin: 8px 0 10px; font-size: .88rem; line-height: 1.5; }
+.lesson-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.debrief { margin: 0 0 14px; padding: 14px; border-radius: 12px; background: rgba(76,157,255,.07); border: 1px solid rgba(76,157,255,.3); }
+.debrief h4 { font-size: .96rem; margin-bottom: 10px; }
+.debrief-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.debrief-items li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; }
+.debrief-items li i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: .74rem; font-weight: 800; }
+.debrief-items li.done i { background: var(--accent); color: var(--accent-ink); }
+.debrief-items li.missed i { background: rgba(255,107,107,.2); color: var(--danger); }
+.debrief-items b { display: block; font-size: .86rem; }
+.debrief-items p { font-size: .84rem; margin: 2px 0; }
+.debrief-items em { display: block; font-style: normal; font-size: .78rem; color: var(--dim); }
+.debrief-coach { margin-top: 12px; font-size: .88rem; padding-top: 10px; border-top: 1px solid var(--line); }
+
+/* ---------------------------- Shape card ---------------------------- */
+.shape-card { margin-bottom: 14px; }
+.shape-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.shape-head b { font-size: 1.05rem; }
+.shape-level { font-size: .7rem; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+.shape-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.shape-toggle button { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--muted); font: inherit; font-size: .84rem; font-weight: 650; cursor: pointer; }
+.shape-toggle button.on { background: rgba(53,211,165,.14); border-color: rgba(53,211,165,.5); color: var(--accent); }
+.shape-pitch { display: block; width: 100%; max-width: 300px; margin: 0 auto; border-radius: 10px; }
+.sp-turf { fill: var(--turf-1); }
+.sp-line { fill: none; stroke: rgba(255,255,255,.35); stroke-width: .35; }
+.sp-player circle { fill: #6fb4ff; stroke: rgba(0,0,0,.5); stroke-width: .25; }
+.sp-player.theirs circle { fill: #f07a45; }
+.sp-player.keeper circle { fill: #d5e6ff; }
+.sp-player.theirs.keeper circle { fill: #ffd2b8; }
+.sp-player text { font-size: 1.9px; font-weight: 800; text-anchor: middle; fill: #06121f; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.sp-player.theirs text { fill: #fff; }
+.sp-player.theirs.keeper text { fill: #3a1a06; }
+.shape-phase-name { margin-top: 10px; font-weight: 700; font-size: .92rem; color: var(--accent); }
+.shape-how { font-size: .88rem; margin-top: 4px; line-height: 1.5; }
+.shape-sw { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.shape-sw h5 { margin: 0 0 4px; font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+.shape-sw ul { margin: 0; padding-left: 16px; font-size: .8rem; display: grid; gap: 3px; }
+.style-title { font-size: .92rem; margin: 6px 0 4px; }
+.lesson-shapes { margin-top: 8px; font-size: .86rem; line-height: 1.5; }
+
+/* Opponents currently drawn to the ball, for "draw the press" lessons. */
+.l-theirs .player.drawn .marker { stroke: #ffffff; stroke-width: .55; }
+.l-theirs .player.drawn .hit { fill: rgba(255,255,255,.18); }
+.goal-status.mission { cursor: pointer; }
+.goal-status.mission u { color: var(--muted); font-size: .7rem; }
+.explain-item { padding: 10px 0; border-top: 1px solid var(--line); }
+.explain-item b { display: block; margin-bottom: 2px; }
+.explain-item p { margin: 2px 0; font-size: .88rem; }
+
+/* Mission briefing and next targets */
+.brief-lesson { font-weight: 650; margin-bottom: 10px; }
+.brief-steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 8px; }
+.brief-steps b { display: block; }
+.brief-steps span { font-size: .9rem; color: var(--muted); }
+.brief-done { font-size: .9rem; margin-bottom: 12px; }
+.l-ours .player.target .marker { stroke: var(--accent); stroke-width: .7; }
+.l-ours .player.target .hit { fill: rgba(53,211,165,.22); }
+@media (max-width: 700px) {
+  .style-chips { flex-wrap: nowrap; }
+  .style-chip { font-size: .68rem; padding: 4px 8px; gap: 5px; min-height: 30px; white-space: nowrap; }
+}
+
+/* Pass preview: a clear risk headline, and on phones a panel pinned above
+   the tab bar so it is never hidden below the pitch. */
+.preview-risk { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px; border: 1px solid var(--line); }
+.preview-risk b { font-size: 1.6rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.preview-risk span { font-size: .8rem; color: var(--muted); line-height: 1.3; }
+.preview-risk em { display: block; font-style: normal; font-weight: 800; font-size: .9rem; }
+.preview-risk.risk-low { background: rgba(53,211,165,.1); border-color: rgba(53,211,165,.45); }
+.preview-risk.risk-low b, .preview-risk.risk-low em { color: var(--accent); }
+.preview-risk.risk-medium { background: rgba(255,194,71,.09); border-color: rgba(255,194,71,.45); }
+.preview-risk.risk-medium b, .preview-risk.risk-medium em { color: var(--warn); }
+.preview-risk.risk-high { background: rgba(255,107,107,.09); border-color: rgba(255,107,107,.45); }
+.preview-risk.risk-high b, .preview-risk.risk-high em { color: var(--danger); }
+.board { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+@media (max-width: 700px) {
+  .preview {
+    position: fixed; left: 8px; right: 8px; margin: 0; z-index: 48;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    max-height: 58svh; overflow-y: auto;
+    box-shadow: 0 -10px 40px rgba(0,0,0,.55);
+  }
+}
+@media (max-width: 700px) {
+  /* Compact preview: the risk and the pass types matter most; keep the pitch visible above. */
+  .preview { max-height: 46svh; padding: 10px 12px; }
+  .preview-head { margin-bottom: 6px; }
+  .preview-risk { padding: 8px 10px; margin-bottom: 8px; }
+  .preview-risk b { font-size: 1.35rem; }
+  .preview-grid { gap: 6px; }
+  .preview-grid > div { padding: 6px 8px; }
+  .preview-grid b { font-size: .95rem; }
+  .preview-grid em { display: none; }
+  .preview-types { margin-top: 8px; }
+  .type-row { min-height: 40px; margin-bottom: 4px; }
+  .preview-why, .preview-foot { font-size: .74rem; }
+}
+@media (max-width: 700px) {
+  /* The pitch fills the lower half of a phone, so the preview sits at the top. */
+  .preview { top: calc(54px + env(safe-area-inset-top)); bottom: auto; max-height: 50svh; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+  .preview-grid { display: none; }
+  .preview-foot { display: none; }
+}
+
+/* Shooting */
+.shoot-btn {
+  display: block; width: calc(100% - 4px); margin: 0 2px 6px; min-height: 40px; border-radius: 10px;
+  border: 1px solid rgba(255,194,71,.6); background: rgba(255,194,71,.14); color: var(--warn);
+  font: inherit; font-weight: 800; font-size: .9rem; cursor: pointer;
+}
+.shoot-btn[hidden] { display: none; }
+.shot-factors { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; font-size: .8rem; color: var(--muted); }
+.shot-factors b { color: var(--text); }
+.shot-factors li.pos b { color: var(--accent); }
+.shot-factors li.neg b { color: var(--warn); }
+@media (max-width: 700px) {
+  .checklist { display: grid; grid-template-columns: auto auto; gap: 3px 12px; }
+}
+
+/* Goals and the off-screen goal marker */
+.goal-net { fill: rgba(255,255,255,.18); stroke: #ffffff; stroke-width: .35; }
+.board { position: relative; }
+.goal-hint {
+  position: absolute; z-index: 2; pointer-events: none;
+  font-size: .72rem; font-weight: 750; color: #fff;
+  background: rgba(6,18,31,.78); border: 1px solid rgba(255,255,255,.35);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+.goal-hint.vertical { top: 6px; left: 50%; transform: translateX(-50%); }
+.goal-hint.horizontal { right: 6px; top: 50%; transform: translateY(-50%); }
+.goal-hint[hidden] { display: none; }
+@media (max-width: 700px) {
+  .goal-status.mission { flex-direction: column; align-items: stretch; gap: 4px; }
+  .checklist { grid-template-columns: 1fr 1fr; }
+  .goal-status.mission span.mission-left { display: flex; justify-content: space-between; }
+  .goal-status.mission span.mission-left br { display: none; }
+}
+
+.replay-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.board-caption.mine { background: rgba(76,157,255,.12); border-color: rgba(76,157,255,.45); }
+.board-caption.mine b { color: #9fcbff; }
+.goal-status[hidden] { display: none !important; }
+.replay-row .btn { font-size: .86rem; padding: 0 8px; white-space: nowrap; }

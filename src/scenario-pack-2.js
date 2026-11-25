@@ -23,37 +23,37 @@ const squad = (rows) =>
 
 const midBlock442 = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 86, 13], ['o-rcb', 'RCB', 89, 28], ['o-lcb', 'LCB', 89, 40], ['o-lb', 'LB', 86, 55],
-  ['o-rm', 'RM', 72, 14], ['o-rcm', 'RCM', 72, 29], ['o-lcm', 'LCM', 72, 39], ['o-lm', 'LM', 72, 54],
-  ['o-rs', 'ST', 58, 30], ['o-ls', 'ST', 58, 38],
+  ['o-lb', 'LB', 86, 13], ['o-lcb', 'LCB', 89, 28], ['o-rcb', 'RCB', 89, 40], ['o-rb', 'RB', 86, 55],
+  ['o-lm', 'LM', 72, 14], ['o-lcm', 'LCM', 72, 29], ['o-rcm', 'RCM', 72, 39], ['o-rm', 'RM', 72, 54],
+  ['o-ls', 'ST', 58, 30], ['o-rs', 'ST', 58, 38],
 ]);
 
 const narrowBlock = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 88, 22], ['o-rcb', 'RCB', 90, 30], ['o-lcb', 'LCB', 90, 38], ['o-lb', 'LB', 88, 46],
-  ['o-dm', 'DM', 80, 34], ['o-rcm', 'RCM', 76, 27], ['o-lcm', 'LCM', 76, 41],
-  ['o-rw', 'RW', 66, 26], ['o-st', 'ST', 62, 34], ['o-lw', 'LW', 66, 42],
+  ['o-lb', 'LB', 88, 22], ['o-lcb', 'LCB', 90, 30], ['o-rcb', 'RCB', 90, 38], ['o-rb', 'RB', 88, 46],
+  ['o-dm', 'DM', 80, 34], ['o-lcm', 'LCM', 76, 27], ['o-rcm', 'RCM', 76, 41],
+  ['o-lw', 'LW', 66, 26], ['o-st', 'ST', 62, 34], ['o-rw', 'RW', 66, 42],
 ]);
 
 const deepBlock = squad([
   ['o-gk', 'GK', 102, 34, 'keeper'],
-  ['o-rb', 'RB', 95, 20], ['o-rcb', 'RCB', 97, 30], ['o-lcb', 'LCB', 97, 38], ['o-lb', 'LB', 95, 48],
-  ['o-rm', 'RM', 89, 22], ['o-rcm', 'RCM', 90, 31], ['o-lcm', 'LCM', 90, 37], ['o-lm', 'LM', 89, 46],
+  ['o-lb', 'LB', 95, 20], ['o-lcb', 'LCB', 97, 30], ['o-rcb', 'RCB', 97, 38], ['o-rb', 'RB', 95, 48],
+  ['o-lm', 'LM', 89, 22], ['o-lcm', 'LCM', 90, 31], ['o-rcm', 'RCM', 90, 37], ['o-rm', 'RM', 89, 46],
   ['o-am', 'AM', 82, 34], ['o-st', 'ST', 74, 34],
 ]);
 
 const pressing433 = squad([
   ['o-gk', 'GK', 99, 34, 'keeper'],
-  ['o-rb', 'RB', 70, 14], ['o-rcb', 'RCB', 74, 29], ['o-lcb', 'LCB', 74, 39], ['o-lb', 'LB', 70, 54],
-  ['o-dm', 'DM', 58, 34], ['o-rcm', 'RCM', 48, 26], ['o-lcm', 'LCM', 48, 42],
-  ['o-rw', 'RW', 30, 18], ['o-st', 'ST', 26, 34], ['o-lw', 'LW', 30, 50],
+  ['o-lb', 'LB', 70, 14], ['o-lcb', 'LCB', 74, 29], ['o-rcb', 'RCB', 74, 39], ['o-rb', 'RB', 70, 54],
+  ['o-dm', 'DM', 58, 34], ['o-lcm', 'LCM', 48, 26], ['o-rcm', 'RCM', 48, 42],
+  ['o-lw', 'LW', 30, 18], ['o-st', 'ST', 26, 34], ['o-rw', 'RW', 30, 50],
 ]);
 
 const highLine = squad([
   ['o-gk', 'GK', 96, 34, 'keeper'],
-  ['o-rb', 'RB', 66, 12], ['o-rcb', 'RCB', 70, 30], ['o-lcb', 'LCB', 70, 38], ['o-lb', 'LB', 66, 56],
-  ['o-dm', 'DM', 60, 34], ['o-rcm', 'RCM', 54, 25], ['o-lcm', 'LCM', 54, 43],
-  ['o-rw', 'RW', 44, 16], ['o-st', 'ST', 40, 34], ['o-lw', 'LW', 44, 52],
+  ['o-lb', 'LB', 66, 12], ['o-lcb', 'LCB', 70, 30], ['o-rcb', 'RCB', 70, 38], ['o-rb', 'RB', 66, 56],
+  ['o-dm', 'DM', 60, 34], ['o-lcm', 'LCM', 54, 25], ['o-rcm', 'RCM', 54, 43],
+  ['o-lw', 'LW', 44, 16], ['o-st', 'ST', 40, 34], ['o-rw', 'RW', 44, 52],
 ]);
 
 /* ---------------------------- Scenarios ---------------------------- */
@@ -166,8 +166,8 @@ const PACK = [
     ]),
     theirs: squad([
       ['o-gk', 'GK', 101, 34, 'keeper'],
-      ['o-rb', 'RB', 84, 12], ['o-rcb', 'RCB', 86, 22], ['o-lcb', 'LCB', 87, 31], ['o-lb', 'LB', 86, 42],
-      ['o-rm', 'RM', 70, 14], ['o-rcm', 'RCM', 70, 24], ['o-lcm', 'LCM', 71, 33], ['o-lm', 'LM', 72, 43],
+      ['o-lb', 'LB', 84, 12], ['o-lcb', 'LCB', 86, 22], ['o-rcb', 'RCB', 87, 31], ['o-rb', 'RB', 86, 42],
+      ['o-lm', 'LM', 70, 14], ['o-lcm', 'LCM', 70, 24], ['o-rcm', 'RCM', 71, 33], ['o-rm', 'RM', 72, 43],
       ['o-am', 'AM', 62, 22], ['o-st', 'ST', 60, 31],
     ]),
   },
@@ -201,6 +201,8 @@ const PACK = [
 
   {
     id: 'chasing-a-goal',
+    // A high line but no press: everybody behind the ball, holding shape.
+    styles: { theirs: 'midBlock' },
     title: 'Chasing a goal',
     subtitle: 'Eighty-eighth minute, one down',
     difficulty: 3,

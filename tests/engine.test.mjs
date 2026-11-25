@@ -5,8 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import {
-  evaluatePass, rankPassTypes, rankOptions, evaluateSequence,
-  laneRisk, linesBroken, effectiveSeparation, distanceToGoal,
+  evaluatePass, evaluateCarry, evaluateShot, rankPassTypes, rankOptions, evaluateSequence,
+  laneRisk, linesBroken, effectiveSeparation, distanceToGoal, runDistance,
 } from '../src/engine.js';
 
 let passed = 0;
@@ -156,6 +156,64 @@ test('every player sits inside the pitch', () => {
       assert.ok(p.x >= 0 && p.x <= 105 && p.y >= 0 && p.y <= 68, `${s.id} ${p.pos} at ${p.x},${p.y}`);
     }
   }
+});
+
+
+test('a through ball only fits when there is space beyond the receiver', () => {
+  const from = P('a', 'CM', 40, 34), to = P('b', 'ST', 58, 34);
+  const open = evaluatePass(from, to, { defenders: [P('d', 'X', 50, 10)], passType: 'through' });
+  const closed = evaluatePass(from, to, { defenders: [P('d', 'X', 50, 10), P('e', 'CB', 62, 35)], passType: 'through' });
+  assert.ok(open.factors.some((f) => f.label.startsWith('Through ball attacks')), 'open space should suit a through ball');
+  assert.ok(closed.factors.some((f) => f.label === 'No space to run into'), 'a defender behind the receiver rules it out');
+});
+
+test('a wide-open short pass is rated as a safe pass (80%+)', () => {
+  const from = P('a', 'CB', 30, 34), to = P('b', 'CM', 40, 42);
+  const r = evaluatePass(from, to, { defenders: [P('d1', 'X', 60, 20), P('d2', 'X', 55, 60)], passType: 'ground' });
+  assert.ok(r.confidence >= 80, `got ${r.confidence}`);
+});
+
+test('the primary recommendation is never a pass the defence is favourite to win when a safe forward option exists', () => {
+  const c = P('a', 'CB', 20, 34);
+  const safeForward = P('b', 'CM', 34, 40);
+  const riskyLong = P('c', 'ST', 70, 34);
+  const defs = [P('d1', 'X', 68, 36), P('d2', 'X', 72, 32), P('d3', 'X', 50, 10)];
+  const r = rankOptions(c, [c, safeForward, riskyLong], defs);
+  assert.equal(r.primary.player.id, 'b', `primary was ${r.primary.player.pos} at ${r.primary.confidence}%`);
+});
+
+
+test('defenders need time to react and accelerate', () => {
+  assert.equal(runDistance(0.3, 7), 0, 'nobody moves before reacting');
+  assert.ok(runDistance(1, 7) < 7 * 1 * 0.5, 'still accelerating after one second');
+  assert.ok(runDistance(3, 7) > runDistance(2, 7), 'longer time, more ground');
+});
+
+test('dribbling into open space is safe; dribbling into a defender is not', () => {
+  const from = P('a', 'CM', 40, 34);
+  const open = evaluateCarry(from, { x: 50, y: 34 }, { defenders: [P('d', 'X', 70, 10)] });
+  const blocked = evaluateCarry(from, { x: 50, y: 34 }, { defenders: [P('d', 'X', 47, 34.5)] });
+  assert.ok(open.confidence >= 80, `open carry ${open.confidence}`);
+  assert.ok(blocked.confidence <= 50, `blocked carry ${blocked.confidence}`);
+  assert.ok(open.confidence > blocked.confidence);
+});
+
+
+test('closer, more central shots are worth more; blockers and pressure reduce xG', () => {
+  const gk = { id: 'k', pos: 'GK', x: 103, y: 34, role: 'keeper' };
+  const xg = (x, y, extra = []) => evaluateShot(P('s', 'ST', x, y), { defenders: [gk, ...extra] }).xg;
+  assert.ok(xg(99, 34) > xg(93, 34) && xg(93, 34) > xg(80, 34), 'distance');
+  assert.ok(xg(93, 34) > xg(93, 52), 'angle');
+  assert.ok(xg(87, 34, [P('b', 'CB', 92, 34)]) < xg(87, 34), 'blocker');
+  assert.ok(xg(87, 34, [P('p', 'CB', 88.5, 34.5)]) < xg(87, 34), 'pressure');
+});
+
+test('a shot is judged by its xG, not counted as a risky pass', () => {
+  const from = P('a', 'ST', 92, 34);
+  const shot = { kind: 'shot', from, to: from, fromLabel: 'ST', toLabel: 'ST', result: evaluateShot(from, { defenders: [] }) };
+  const r = evaluateSequence([shot], { objective: 'x', objectiveCheck: {} });
+  assert.notEqual(r.verdict, 'lost');
+  assert.ok(r.notes.some((n) => n.text.includes('xG')));
 });
 
 console.log(`\n${passed} passing`);

@@ -24,3 +24,12 @@ jobs:
       # No dependencies to install — the tests use only the Node standard library.
       - name: Run engine tests
         run: node tests/engine.test.mjs
+
+      - name: Run movement tests
+        run: node tests/tactics.test.mjs
+
+      - name: Run lesson tests
+        run: node tests/lessons.test.mjs
+
+      - name: Run formation tests
+        run: node tests/formations.test.mjs
