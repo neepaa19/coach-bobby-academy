@@ -76,3 +76,4 @@ Shipped August 2026 (the docs still listed it as planned).
 - **Shape card**: tap either team button above the pitch to see that team's formation, toggling between "without the ball" and "with the ball" with players gliding between the two. The press lesson explains both teams' shapes.
 - Docs: `Curriculum_Plan.md` (draft for approval) and `Decision_Register.md`.
 - **"Draw the press" made visible**: the checklist shows a live count (e.g. "Draw the press 1/3") and the opponents who count get a white ring on the pitch; tapping the checklist opens a plain-English explanation of every item. Team buttons shortened so the pitch stays in view.
+- **Mission briefing**: lessons open with "Your mission" (each checklist item, and "when all are ticked, tap Finish") before the first move. "Front three" now names the players (RW, ST or LW), and once the press is drawn those targets glow green on the pitch.

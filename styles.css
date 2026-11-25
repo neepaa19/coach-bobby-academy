@@ -807,3 +807,16 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
 .explain-item { padding: 10px 0; border-top: 1px solid var(--line); }
 .explain-item b { display: block; margin-bottom: 2px; }
 .explain-item p { margin: 2px 0; font-size: .88rem; }
+
+/* Mission briefing and next targets */
+.brief-lesson { font-weight: 650; margin-bottom: 10px; }
+.brief-steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 8px; }
+.brief-steps b { display: block; }
+.brief-steps span { font-size: .9rem; color: var(--muted); }
+.brief-done { font-size: .9rem; margin-bottom: 12px; }
+.l-ours .player.target .marker { stroke: var(--accent); stroke-width: .7; }
+.l-ours .player.target .hit { fill: rgba(53,211,165,.22); }
+@media (max-width: 700px) {
+  .style-chips { flex-wrap: nowrap; }
+  .style-chip { font-size: .68rem; padding: 4px 8px; gap: 5px; min-height: 30px; white-space: nowrap; }
+}

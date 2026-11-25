@@ -15,7 +15,7 @@ import { missionStatus, snapshot, drawProgress } from './lessons.js';
 import { formationById, formationFromText, shape, LEVEL_NAMES } from './formations.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
-import { reactToPass, styleFor, separate, DEF_STYLES, ATT_STYLES } from './tactics.js';
+import { reactToPass, styleFor, separate, unitOfPos, DEF_STYLES, ATT_STYLES } from './tactics.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -391,6 +391,21 @@ function loadScenario(id) {
   $('#analysis').hidden = true;
   $('#analysis').innerHTML = '';
   attachBoardHandlers();
+  if (s.lesson && State.briefedFor !== s.id) showBriefing(s);
+}
+
+/** Before the first move of a lesson: exactly what you are trying to do, and when you are done. */
+function showBriefing(s) {
+  State.briefedFor = s.id;
+  if (!$('#sheet')) return;
+  openSheet('Your mission', `
+    <p class="brief-lesson"><span class="objective-tag">Lesson</span> ${s.lesson.title}</p>
+    <ol class="brief-steps">
+      ${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}</b><span>${(() => { const t = i.label.split(':').slice(1).join(':').trim(); return t.charAt(0).toUpperCase() + t.slice(1); })()}.</span></li>`).join('')}
+    </ol>
+    <p class="brief-done">The checklist above the pitch ticks off as you go. <b>When all ${s.mission.items.length} are ticked, tap Finish.</b> You have up to ${s.maxActions || 5} actions: passes, or dribbles (tap the player on the ball, then tap open grass).</p>
+    <button class="btn btn-primary btn-block" id="briefStart">Start</button>`);
+  $('#briefStart').onclick = closeSheet;
 }
 
 /**
@@ -458,7 +473,7 @@ function renderGoalStatus() {
   const left = max - State.sequence.length;
   const goal = goalShort(State.scenario);
   let cls = 'todo', html;
-  if (State.submitted) { box.hidden = true; return; }
+  if (State.submitted) { box.hidden = true; $$('.l-ours .player.target', Board.svg).forEach((n) => n.classList.remove('target')); return; }
   box.hidden = false;
   const m = mission();
   highlightDrawn([]);
@@ -474,6 +489,17 @@ function renderGoalStatus() {
       highlightDrawn(pr.ids);
       extra[item.id] = !pr.inHalf ? '' : ` ${Math.min(pr.count, pr.need)}/${pr.need}${pr.count >= pr.need && !pr.wide ? ' · go wide' : ''}`;
     }
+    // Once the first step is done, light up the players the ball must reach next.
+    const targets = [];
+    for (const item of State.scenario.mission.items) {
+      if (item.type !== 'reach') continue;
+      const st = m.find((x) => x.id === item.id);
+      const ready = !item.after || (m.find((x) => x.id === item.after) || {}).done;
+      if (!st.done && ready) {
+        for (const p of State.ours) if (item.units.includes(unitOfPos(p.pos)) && p.id !== State.carrierId) targets.push(p.id);
+      }
+    }
+    $$('.l-ours .player', Board.svg).forEach((n) => n.classList.toggle('target', targets.includes(n.dataset.id)));
     const items = m.map((x) => `<li class="${x.done ? 'done' : x.broken ? 'broken' : ''}"><i>${x.done ? '✓' : x.broken ? '✗' : ''}</i>${x.label.split(':')[0]}${extra[x.id] || ''}</li>`).join('');
     const all = m.every((x) => x.done);
     box.className = `goal-status mission ${all ? 'met' : m.some((x) => x.broken) ? 'out' : 'open'}`;

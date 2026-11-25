@@ -78,7 +78,7 @@ export const SCENARIOS = [
           label: 'Draw the press: let 3 of their forwards or midfielders come at the ball, out wide in your half',
           why: 'Pressing players run at the ball to win it back. Every one who does has left the space he was guarding. Get three of them chasing the ball near a touchline (a pass to your full-back, or letting him dribble up the line, usually does it) and the middle and far side open up behind them.' },
         { id: 'break', type: 'reach', units: ['front'], minX: 52.5, after: 'draw',
-          label: 'Break it: then get the ball to one of your front three in their half',
+          label: 'Break it: then get the ball to your RW, ST or LW in their half',
           why: 'Once the press has committed, the fastest way to punish it is to get the ball beyond it, to the players it left behind.' },
         { id: 'safe', type: 'safe', behind: 3, minConfidence: 55, fromX: 40,
           label: 'Stay safe: keep 3 players behind the ball, and no action under 55%',
