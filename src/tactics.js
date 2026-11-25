@@ -51,6 +51,7 @@ export const SETTLE_TIME = 0.25;
 export const DEF_STYLES = {
   highPress: {
     id: 'highPress',
+    short: 'High press',
     label: 'High press',
     summary: 'Win the ball back high up the pitch. The back line pushes up near halfway to keep the team compact, the nearest player presses on a curved run, and a second player jumps onto the easiest pass.',
     lineWhy: 'pushed high behind the press so the gap between the lines stays small',
@@ -61,6 +62,7 @@ export const DEF_STYLES = {
   },
   midBlock: {
     id: 'midBlock',
+    short: 'Mid block',
     label: 'Mid block',
     summary: 'Stay compact around the middle third and let the opponent have the ball in front. The block slides as a unit, and pressing starts only when the ball enters midfield or goes wide, where the touchline helps.',
     lineWhy: 'held at the base of a compact middle block, protecting the space behind',
@@ -71,6 +73,7 @@ export const DEF_STYLES = {
   },
   lowBlock: {
     id: 'lowBlock',
+    short: 'Low block',
     label: 'Low block',
     summary: 'Defend deep and narrow, protecting the penalty box. The team gives away the flanks and the space in front, and presses only when the ball arrives near the box.',
     lineWhy: 'dropped deep to protect the box and leave no space behind',
@@ -81,6 +84,7 @@ export const DEF_STYLES = {
   },
   recovering: {
     id: 'recovering',
+    short: 'Recovering',
     label: 'Recovering (caught in transition)',
     summary: 'The opponent has just lost the ball with players committed forward. Everyone sprints back toward a compact shape, and only the nearest player tries to slow the ball down.',
     lineWhy: 'sprinting back to get goal-side of the ball',
@@ -95,6 +99,7 @@ export const DEF_STYLES = {
 export const ATT_STYLES = {
   possession: {
     id: 'possession',
+    short: 'Possession',
     label: 'Possession build-up',
     summary: 'Keep the ball and move the opponent. The team steps up together behind the ball, nearby players find pockets with a clear lane, wide players hold the width, and two centre backs stay behind the ball as rest defence.',
     advance: { back: 0.55, mid: 0.75, front: 0.5 },

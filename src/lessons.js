@@ -30,6 +30,19 @@ const MID_Y = 34;
 const pressersNear = (pic, radius, maxX) => (pic.ball.x > maxX ? 0 : pic.theirs.filter((o) =>
   o.role !== 'keeper' && ['front', 'mid'].includes(unitOfPos(o.pos)) && dist(o, pic.ball) <= radius).length);
 
+/**
+ * Live view of a "draw" item for the current picture: which of their
+ * players count as drawn right now, and what is still missing.
+ */
+export function drawProgress(item, pic) {
+  const radius = item.radius || 20, maxX = item.maxX || 52.5;
+  const ids = pic.ball.x > maxX ? [] : pic.theirs
+    .filter((o) => o.role !== 'keeper' && ['front', 'mid'].includes(unitOfPos(o.pos)) && dist(o, pic.ball) <= radius)
+    .map((o) => o.id);
+  const wide = !item.wide || Math.abs(pic.ball.y - MID_Y) >= 14;
+  return { ids, count: ids.length, need: item.count, wide, inHalf: pic.ball.x <= maxX };
+}
+
 /** Our outfield players goal-side of the ball (closer to our own goal). */
 const behindBall = (pic) => pic.ours.filter((p) => p.role !== 'keeper' && p.id !== pic.carrierId && p.x < pic.ball.x - 2).length;
 

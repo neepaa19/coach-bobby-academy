@@ -11,7 +11,7 @@ import {
   distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
 import { bestSequence } from './planner.js';
-import { missionStatus, snapshot } from './lessons.js';
+import { missionStatus, snapshot, drawProgress } from './lessons.js';
 import { formationById, formationFromText, shape, LEVEL_NAMES } from './formations.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
@@ -429,6 +429,11 @@ function resetReasons() {
 const carrier = () => State.ours.find((p) => p.id === State.carrierId);
 const outfieldTeammates = () => State.ours.filter((p) => p.id !== State.carrierId);
 
+/** Ring the opponents who currently count as "drawn" by the ball. */
+function highlightDrawn(ids) {
+  $$('.l-theirs .player', Board.svg).forEach((n) => n.classList.toggle('drawn', ids.includes(n.dataset.id)));
+}
+
 /** The scenario objective in a few words, for the live tracker. */
 function goalShort(s) {
   const o = s.objectiveCheck || {};
@@ -456,11 +461,26 @@ function renderGoalStatus() {
   if (State.submitted) { box.hidden = true; return; }
   box.hidden = false;
   const m = mission();
+  highlightDrawn([]);
   if (m) {
-    const items = m.map((x) => `<li class="${x.done ? 'done' : x.broken ? 'broken' : ''}"><i>${x.done ? '✓' : x.broken ? '✗' : ''}</i>${x.label.split(':')[0]}</li>`).join('');
+    // Live count for "draw" items, with the drawn opponents ringed on the pitch.
+    const pic = State.history[State.history.length - 1];
+    const extra = {};
+    for (const item of State.scenario.mission.items) {
+      if (item.type !== 'draw') continue;
+      const st = m.find((x) => x.id === item.id);
+      if (st.done) continue;
+      const pr = drawProgress(item, pic);
+      highlightDrawn(pr.ids);
+      extra[item.id] = !pr.inHalf ? '' : ` ${Math.min(pr.count, pr.need)}/${pr.need}${pr.count >= pr.need && !pr.wide ? ' · go wide' : ''}`;
+    }
+    const items = m.map((x) => `<li class="${x.done ? 'done' : x.broken ? 'broken' : ''}"><i>${x.done ? '✓' : x.broken ? '✗' : ''}</i>${x.label.split(':')[0]}${extra[x.id] || ''}</li>`).join('');
     const all = m.every((x) => x.done);
     box.className = `goal-status mission ${all ? 'met' : m.some((x) => x.broken) ? 'out' : 'open'}`;
-    box.innerHTML = `<ul class="checklist">${items}</ul><span class="mission-left">${all ? 'Lesson complete. Finish now.' : `${left} action${left === 1 ? '' : 's'} left`}</span>`;
+    box.innerHTML = `<ul class="checklist">${items}</ul><span class="mission-left">${all ? 'Lesson complete. Finish now.' : `${left} action${left === 1 ? '' : 's'} left`}<br><u>What do these mean?</u></span>`;
+    box.onclick = () => openSheet('This lesson’s checklist', `
+      <p class="style-summary">${State.scenario.lesson.idea}</p>
+      ${State.scenario.mission.items.map((i) => `<div class="explain-item"><b>${i.label.split(':')[0]}</b><p>${(() => { const t = i.label.split(':').slice(1).join(':').trim(); return t.charAt(0).toUpperCase() + t.slice(1); })()}.</p><p class="muted small">${i.why}</p>${i.type === 'draw' ? '<p class="small">On the pitch, opponents who count as drawn get a white ring, and the checklist shows how many you have so far.</p>' : ''}</div>`).join('')}`);
     return;
   }
   if (!State.sequence.length) {
@@ -476,6 +496,7 @@ function renderGoalStatus() {
     html = `<b>No actions left</b><span>The goal was not reached. Finish to see how you did and watch the best sequence.</span>`;
   }
   box.className = `goal-status ${cls}`;
+  box.onclick = null;
   box.innerHTML = html;
 }
 
@@ -968,8 +989,8 @@ function renderStyleChips() {
   if (!host) return;
   const fm = formationsFor(State.scenario);
   host.innerHTML = `
-    <button class="style-chip them" data-side="them"><i></i>Them: ${fm.theirs ? fm.theirs + ' · ' : ''}${them.label}</button>
-    <button class="style-chip us" data-side="us"><i></i>Us: ${fm.ours} · ${us.label}</button>`;
+    <button class="style-chip them" data-side="them"><i></i>Them: ${fm.theirs ? fm.theirs + ' ' : ''}${them.short}</button>
+    <button class="style-chip us" data-side="us"><i></i>Us: ${fm.ours} ${us.short}</button>`;
   $$('.style-chip', host).forEach((b) => {
     b.onclick = () => {
       const isThem = b.dataset.side === 'them';

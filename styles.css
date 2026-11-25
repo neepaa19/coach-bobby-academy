@@ -798,3 +798,12 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
 .shape-sw ul { margin: 0; padding-left: 16px; font-size: .8rem; display: grid; gap: 3px; }
 .style-title { font-size: .92rem; margin: 6px 0 4px; }
 .lesson-shapes { margin-top: 8px; font-size: .86rem; line-height: 1.5; }
+
+/* Opponents currently drawn to the ball, for "draw the press" lessons. */
+.l-theirs .player.drawn .marker { stroke: #ffffff; stroke-width: .55; }
+.l-theirs .player.drawn .hit { fill: rgba(255,255,255,.18); }
+.goal-status.mission { cursor: pointer; }
+.goal-status.mission u { color: var(--muted); font-size: .7rem; }
+.explain-item { padding: 10px 0; border-top: 1px solid var(--line); }
+.explain-item b { display: block; margin-bottom: 2px; }
+.explain-item p { margin: 2px 0; font-size: .88rem; }

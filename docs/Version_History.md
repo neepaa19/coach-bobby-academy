@@ -75,3 +75,4 @@ Shipped August 2026 (the docs still listed it as planned).
 - **Formation library** (`src/formations.js`): 12 formations in five levels (foundations to rare and historical), each with an out-of-possession and an in-possession shape, how each phase works, strengths and weaknesses. Tests in `tests/formations.test.mjs`.
 - **Shape card**: tap either team button above the pitch to see that team's formation, toggling between "without the ball" and "with the ball" with players gliding between the two. The press lesson explains both teams' shapes.
 - Docs: `Curriculum_Plan.md` (draft for approval) and `Decision_Register.md`.
+- **"Draw the press" made visible**: the checklist shows a live count (e.g. "Draw the press 1/3") and the opponents who count get a white ring on the pitch; tapping the checklist opens a plain-English explanation of every item. Team buttons shortened so the pitch stays in view.

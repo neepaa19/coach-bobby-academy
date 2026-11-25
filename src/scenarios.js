@@ -75,8 +75,8 @@ export const SCENARIOS = [
     mission: {
       items: [
         { id: 'draw', type: 'draw', count: 3, radius: 20, wide: true, maxX: 52.5,
-          label: 'Draw the press: pull 3 of their forwards or midfielders to the ball on one side of your half',
-          why: 'Players who press the ball are no longer covering the space behind them. Drawing them to a flank empties the middle and the far side.' },
+          label: 'Draw the press: let 3 of their forwards or midfielders come at the ball, out wide in your half',
+          why: 'Pressing players run at the ball to win it back. Every one who does has left the space he was guarding. Get three of them chasing the ball near a touchline (a pass to your full-back, or letting him dribble up the line, usually does it) and the middle and far side open up behind them.' },
         { id: 'break', type: 'reach', units: ['front'], minX: 52.5, after: 'draw',
           label: 'Break it: then get the ball to one of your front three in their half',
           why: 'Once the press has committed, the fastest way to punish it is to get the ball beyond it, to the players it left behind.' },
