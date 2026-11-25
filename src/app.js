@@ -7,7 +7,7 @@
  */
 
 import {
-  evaluatePass, evaluateCarry, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
+  evaluatePass, evaluateCarry, evaluateShot, SHOT_RANGE, rankPassTypes, inferPassType, rankOptions, evaluateSequence,
   distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
 import { bestSequence } from './planner.js';
@@ -546,6 +546,7 @@ function refreshBoardState() {
   $('#finishBtn').classList.toggle('goal-met', met && !State.submitted);
   $('#finishBtn').classList.remove('confirm');
   renderGoalStatus();
+  refreshShootButton();
   $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'In progress';
   $('#stateBadge').className = `badge ${State.submitted ? 'badge-review' : 'badge-live'}`;
   $('.action-bar').hidden = State.submitted;
@@ -583,6 +584,77 @@ async function playPass(receiver, passType) {
   $('#board').classList.remove('busy');
   refreshBoardState();
   renderSequence();
+}
+
+/* ------------------------------ Shooting ------------------------------ */
+
+/** The number shown for an action: pass/carry success, or a shot's xG. */
+const actionPct = (st) => (st.result.kind === 'shot' ? `${st.result.xg.toFixed(2)} xG` : `${st.result.confidence}%`);
+
+function refreshShootButton() {
+  const btn = $('#shootBtn');
+  if (!btn) return;
+  const c = carrier();
+  const inRange = c && !State.submitted && distanceToGoal(c) <= SHOT_RANGE && c.x > 60;
+  btn.hidden = !inRange;
+  btn.disabled = State.busy;
+}
+
+/** First a look at the chance (like the pass preview), then the shot. */
+function previewShot() {
+  if (State.busy || State.submitted) return;
+  const c = carrier();
+  const r = evaluateShot(c, { defenders: State.theirs, teammates: State.ours });
+  previewOpen = true;
+  const box = $('#preview');
+  const band = r.xg >= 0.2 ? 'low' : r.xg >= 0.1 ? 'medium' : 'high';
+  box.innerHTML = `
+    <div class="preview-head"><strong>${c.pos} shoots</strong><button class="icon-btn" id="previewClose" aria-label="Close">✕</button></div>
+    <div class="preview-risk risk-${band}">
+      <b>${Math.round(r.xg * 100)}</b>
+      <span><em>${band === 'low' ? 'Good chance' : band === 'medium' ? 'Half-chance' : 'Low-quality shot'}</em>of 100 shots like this, about ${Math.round(r.xg * 100)} go in (${r.xg.toFixed(2)} xG)</span>
+    </div>
+    <ul class="shot-factors">${r.factors.map((f) => `<li class="${f.points > 0 ? 'pos' : f.points < 0 ? 'neg' : ''}"><b>${f.label}</b> ${f.detail}</li>`).join('')}</ul>
+    <div class="row-actions"><button class="btn btn-ghost" id="shotCancel">Keep the ball</button><button class="btn btn-primary" id="shotGo">Shoot</button></div>`;
+  box.hidden = false;
+  $('#previewClose').onclick = hidePreview;
+  $('#shotCancel').onclick = hidePreview;
+  $('#shotGo').onclick = () => { hidePreview(); playShot(); };
+}
+
+async function playShot() {
+  if (State.busy || State.submitted) return;
+  const max = State.scenario.maxActions || 5;
+  if (State.sequence.length >= max) { toast(`That is the action limit for this scenario (${max}).`); return; }
+  const c = carrier();
+  const result = evaluateShot(c, { defenders: State.theirs, teammates: State.ours });
+  State.busy = true;
+  $('#board').classList.add('busy');
+  refreshShootButton();
+  // The ball flies at the far side of the goal; the outcome is never simulated.
+  const aim = { x: 105.5, y: c.y < 34 ? 36.5 : 31.5 };
+  await animateBallTo(c, aim, 520);
+  const snap = { x: c.x, y: c.y, id: c.id, pos: c.pos };
+  State.sequence.push({ kind: 'shot', from: snap, to: snap, fromLabel: c.pos, toLabel: c.pos, result });
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
+  toast(`${Math.round(result.xg * 100)} in 100 shots like that go in (${result.xg.toFixed(2)} xG).`);
+  State.busy = false;
+  $('#board').classList.remove('busy');
+  renderSequence();
+  finishSequence(true); // a shot ends the move
+}
+
+function animateBallTo(from, to, ms) {
+  return new Promise((resolve) => {
+    if (reducedMotion()) { Board.moveBall(to.x, to.y); resolve(); return; }
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = clamp((now - t0) / ms, 0, 1);
+      Board.moveBall(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+      if (t < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 /* ------------------------------ Carrying ------------------------------ */
@@ -683,11 +755,11 @@ function undo() {
   renderSequence();
 }
 
-function finishSequence() {
+function finishSequence(force) {
   if (State.submitted || !State.sequence.length) return;
   const max = State.scenario.maxActions || 5;
   // Stopping before the goal is allowed, but never by accident.
-  if (!goalMet() && State.sequence.length < max && !State.confirmFinish) {
+  if (force !== true && !goalMet() && State.sequence.length < max && !State.confirmFinish) {
     State.confirmFinish = true;
     const btn = $('#finishBtn');
     btn.textContent = 'Goal not reached · tap again to finish anyway';
@@ -1071,8 +1143,8 @@ function renderSequence() {
   wrap.innerHTML = State.sequence.map((s, i) => `
     <div class="seq-step">
       <span class="seq-n">${i + 1}</span>
-      <span class="seq-body"><b>${s.kind === 'carry' ? `${s.fromLabel} runs ${s.result.metrics.passDistance} yd` : `${s.fromLabel} → ${s.toLabel}`}</b><em>${s.result.passTypeLabel}</em></span>
-      <span class="seq-pct${s.result.confidence < 45 ? ' risky' : ''}">${State.submitted ? s.result.confidence + '%' : '•'}</span>
+      <span class="seq-body"><b>${s.kind === 'carry' ? `${s.fromLabel} runs ${s.result.metrics.passDistance} yd` : s.kind === 'shot' ? `${s.fromLabel} shoots from ${s.result.metrics.passDistance} yd` : `${s.fromLabel} → ${s.toLabel}`}</b><em>${s.result.passTypeLabel}</em></span>
+      <span class="seq-pct${s.kind !== 'shot' && s.result.confidence < 45 ? ' risky' : ''}">${State.submitted ? actionPct(s) : '•'}</span>
     </div>`).join('');
 }
 
@@ -1096,7 +1168,7 @@ function lessonDebrief(a) {
 function earlyStopNote(a) {
   const max = State.scenario.maxActions || 5;
   const n = State.sequence.length;
-  if (a.verdict === 'success' || n >= max || State.scenario.lesson) return '';
+  if (a.verdict === 'success' || n >= max || State.scenario.lesson || State.sequence.some((x) => x.kind === 'shot')) return '';
   const left = max - n;
   return `<li class="note note-warn"><b>You stopped after ${n} action${n === 1 ? '' : 's'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
 }
@@ -1106,14 +1178,14 @@ function bestSequenceCard(a) {
   const b = State.best;
   if (!b || !b.sequence.length) return '';
   const steps = b.sequence.map((st, i) => `
-    <li><span class="bs-n">${i + 1}</span><span class="bs-body"><b>${st.fromLabel} → ${st.toLabel}</b><em>${st.result.passTypeLabel}</em></span><span class="bs-pct${st.result.confidence < 50 ? ' risky' : ''}">${st.result.confidence}%</span></li>`).join('');
+    <li><span class="bs-n">${i + 1}</span><span class="bs-body"><b>${st.kind === 'carry' ? `${st.fromLabel} runs ${st.result.metrics.passDistance} yd` : st.kind === 'shot' ? `${st.fromLabel} shoots` : `${st.fromLabel} → ${st.toLabel}`}</b><em>${st.result.passTypeLabel}</em></span><span class="bs-pct${st.kind !== 'shot' && st.result.confidence < 50 ? ' risky' : ''}">${actionPct(st)}</span></li>`).join('');
   return `
     <section class="best-seq">
       <div class="best-head">
         <h4>Best sequence the engine found</h4>
         <span class="best-rating">${b.analysis.rating}<em>rating</em></span>
       </div>
-      <p class="best-compare">Yours: ${a.summary.passes} pass${a.summary.passes === 1 ? '' : 'es'}, rated ${a.rating}. Best found: ${b.sequence.length} pass${b.sequence.length === 1 ? '' : 'es'}, rated ${b.analysis.rating}${b.objectiveMet ? ', objective met' : ''}.</p>
+      <p class="best-compare">Yours: ${a.summary.passes} action${a.summary.passes === 1 ? '' : 's'}, rated ${a.rating}. Best found: ${b.sequence.length} action${b.sequence.length === 1 ? '' : 's'}, rated ${b.analysis.rating}${b.objectiveMet ? ', objective met' : ''}.</p>
       <ol class="best-steps">${steps}</ol>
       ${b.objectiveMet ? '' : '<p class="best-note">Even the best route found here does not fully reach the goal, so this scenario is genuinely hard. Some of these goals need a pass into a teammate\'s run, which the board cannot play yet.</p>'}
       <button class="btn btn-primary btn-block" id="watchBestBtn">▶ Watch the best sequence</button>
@@ -1168,14 +1240,16 @@ function renderAnalysis(a) {
         <p class="why-scope">This explains <b>each individual pass</b> you played, then the sequence as a whole. Percentages are tactical estimates produced by the published scoring model — not measured probabilities.</p>
         ${State.sequence.map((s, i) => `
           <div class="why-pass">
-            <h4>${s.kind === 'carry' ? `Action ${i + 1}: ${s.fromLabel} runs with the ball` : `Action ${i + 1}: ${s.fromLabel} → ${s.toLabel}`} <span class="why-pct">${s.result.confidence}%</span></h4>
-            <p class="why-type">${s.kind === 'carry'
+            <h4>${s.kind === 'carry' ? `Action ${i + 1}: ${s.fromLabel} runs with the ball` : s.kind === 'shot' ? `Action ${i + 1}: ${s.fromLabel} shoots` : `Action ${i + 1}: ${s.fromLabel} → ${s.toLabel}`} <span class="why-pct">${actionPct(s)}</span></h4>
+            <p class="why-type">${s.kind === 'shot'
+              ? `Shot · ${s.result.metrics.passDistance} yd out · ${s.result.metrics.angleDeg}° of goal to aim at · about ${Math.round(s.result.xg * 100)} in 100 go in`
+              : s.kind === 'carry'
               ? `Carry · ${s.result.metrics.passDistance} yd at ${speed(SPEED.carry)} · ${s.result.metrics.travelTime}s · about ${s.result.metrics.effectiveSeparation} yd of space when he arrives`
               : `${s.result.passTypeLabel} · ${s.result.metrics.passDistance} yd at ${speed(SPEED[s.result.passType])} · ${s.result.metrics.travelTime}s travel · receiver keeps ${s.result.metrics.effectiveSeparation} yd`}</p>
             <ul class="factors">
               ${s.result.factors.map((f) => `
                 <li class="${f.points >= 0 ? 'pos' : 'neg'}">
-                  <span class="fpts">${f.points > 0 ? '+' : ''}${f.points}</span>
+                  <span class="fpts">${s.kind === 'shot' ? (f.points > 0 ? '▲' : f.points < 0 ? '▼' : '•') : `${f.points > 0 ? '+' : ''}${f.points}`}</span>
                   <span class="fbody"><b>${f.label}</b><em>${f.detail}</em></span>
                 </li>`).join('')}
             </ul>
@@ -1302,6 +1376,13 @@ async function playBestSequence() {
   for (let i = 0; i < b.sequence.length; i++) {
     const st = b.sequence[i];
     const node = State.ours.find((p) => p.id === st.to.id);
+    if (st.kind === 'shot') {
+      cap.hidden = false;
+      cap.innerHTML = `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} shoots · ${st.result.xg.toFixed(2)} xG (about ${Math.round(st.result.xg * 100)} in 100 go in)`;
+      await animateBallTo(carrierNode, { x: 105.5, y: carrierNode.y < 34 ? 36.5 : 31.5 }, 520);
+      await new Promise((r) => setTimeout(r, 900));
+      continue;
+    }
     const receiver = st.kind === 'carry' ? { ...node, x: st.to.x, y: st.to.y } : node;
     cap.hidden = false;
     cap.innerHTML = st.kind === 'carry'
@@ -1535,7 +1616,8 @@ function boot() {
     const t = e.target.closest('.tab');
     if (t) document.body.dataset.tab = t.dataset.tab;
   });
-  $('#finishBtn').onclick = finishSequence;
+  $('#finishBtn').onclick = () => finishSequence();
+  $('#shootBtn').onclick = previewShot;
   $('#undoBtn').onclick = undo;
   $('#restartBtn').onclick = () => loadScenario(State.scenario.id);
   $('#pickerBtn').onclick = () => { renderScenarioPicker(); openSheet('Choose a scenario', $('#scenarioPickerHost').innerHTML); $('#sheetBody').innerHTML = ''; $('#sheetBody').appendChild($('#scenarioPicker')); };

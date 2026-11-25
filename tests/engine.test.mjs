@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import {
-  evaluatePass, evaluateCarry, rankPassTypes, rankOptions, evaluateSequence,
+  evaluatePass, evaluateCarry, evaluateShot, rankPassTypes, rankOptions, evaluateSequence,
   laneRisk, linesBroken, effectiveSeparation, distanceToGoal, runDistance,
 } from '../src/engine.js';
 
@@ -196,6 +196,24 @@ test('dribbling into open space is safe; dribbling into a defender is not', () =
   assert.ok(open.confidence >= 80, `open carry ${open.confidence}`);
   assert.ok(blocked.confidence <= 50, `blocked carry ${blocked.confidence}`);
   assert.ok(open.confidence > blocked.confidence);
+});
+
+
+test('closer, more central shots are worth more; blockers and pressure reduce xG', () => {
+  const gk = { id: 'k', pos: 'GK', x: 103, y: 34, role: 'keeper' };
+  const xg = (x, y, extra = []) => evaluateShot(P('s', 'ST', x, y), { defenders: [gk, ...extra] }).xg;
+  assert.ok(xg(99, 34) > xg(93, 34) && xg(93, 34) > xg(80, 34), 'distance');
+  assert.ok(xg(93, 34) > xg(93, 52), 'angle');
+  assert.ok(xg(87, 34, [P('b', 'CB', 92, 34)]) < xg(87, 34), 'blocker');
+  assert.ok(xg(87, 34, [P('p', 'CB', 88.5, 34.5)]) < xg(87, 34), 'pressure');
+});
+
+test('a shot is judged by its xG, not counted as a risky pass', () => {
+  const from = P('a', 'ST', 92, 34);
+  const shot = { kind: 'shot', from, to: from, fromLabel: 'ST', toLabel: 'ST', result: evaluateShot(from, { defenders: [] }) };
+  const r = evaluateSequence([shot], { objective: 'x', objectiveCheck: {} });
+  assert.notEqual(r.verdict, 'lost');
+  assert.ok(r.notes.some((n) => n.text.includes('xG')));
 });
 
 console.log(`\n${passed} passing`);

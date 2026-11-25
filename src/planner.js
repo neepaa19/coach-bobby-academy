@@ -17,7 +17,7 @@
  * ------------------------------------------------------------------
  */
 
-import { evaluatePass, evaluateCarry, inferPassType, rankOptions, evaluateSequence, checkObjective, dist, clamp } from './engine.js';
+import { evaluatePass, evaluateCarry, evaluateShot, SHOT_RANGE, distanceToGoal, inferPassType, rankOptions, evaluateSequence, checkObjective, dist, clamp } from './engine.js';
 import { reactToPass } from './tactics.js';
 import { missionStatus, snapshot } from './lessons.js';
 
@@ -43,6 +43,15 @@ function carryOptions(carrier, defenders) {
 function apply(state, option, homes, styles, startBall) {
   const from = state.ours.find((p) => p.id === state.carrierId);
   let to, passType, result, kind;
+  if (option.shot) {
+    kind = 'shot';
+    to = from;
+    passType = 'shot';
+    result = evaluateShot(from, { defenders: state.theirs, teammates: state.ours });
+    const step = { kind, from: snap(from), to: snap(from), fromLabel: from.pos, toLabel: from.pos, result };
+    return { ours: state.ours, theirs: state.theirs, carrierId: from.id, sequence: [...state.sequence, step],
+      history: [...state.history, snapshot(state.ours, state.theirs, from.id, step)], ended: true };
+  }
   if (option.carry) {
     kind = 'carry';
     to = { ...from, x: option.carry.x, y: option.carry.y };
@@ -99,14 +108,17 @@ export function bestSequence({ scenario, ours, theirs, homes, styles, startBall 
         .filter((o) => !(last && last.kind !== 'carry' && last.from.id === o.player.id));
       // No more than one carry in a row: a second is usually better as a pass.
       const carries = last && last.kind === 'carry' ? [] : carryOptions(carrier, state.theirs);
-      const ranked = [...passes, ...carries].sort((a, b) => b.value - a.value).slice(0, BRANCH);
+      // A shot is always considered when in range: it ends the move.
+      const shots = distanceToGoal(carrier) <= SHOT_RANGE && carrier.x > 60
+        ? [{ shot: true, value: evaluateShot(carrier, { defenders: state.theirs, skipAlternative: true }).xg * 400 }] : [];
+      const ranked = [...passes, ...carries].sort((a, b) => b.value - a.value).slice(0, BRANCH).concat(shots);
       for (const o of ranked) {
         const child = apply(state, o, homes, styles, startBall);
         const g = grade(child.sequence, scenario, child.history);
         child.g = g;
         if (!best || g.key > best.g.key) best = child;
         // A sequence the defence wins, or one that already met the objective, stops here.
-        if (g.analysis.verdict !== 'lost' && !g.met) next.push(child);
+        if (g.analysis.verdict !== 'lost' && !g.met && !child.ended) next.push(child);
       }
     }
     if (!next.length) break;

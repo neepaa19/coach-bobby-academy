@@ -379,6 +379,105 @@ export function evaluateCarry(from, to, ctx) {
   };
 }
 
+/*
+ * SHOOTING — expected goals (xG): of 100 shots like this one, how many
+ * would usually go in? Built from the factors analysts use: the angle of
+ * goal the shooter can see (which combines distance and position),
+ * opponents in the way, where the keeper is, and pressure on the shooter.
+ * A transparent coaching model, roughly in line with typical public xG
+ * figures (a central shot from 12 yd is about 1 in 5; from 25 yd about
+ * 1 in 20). Not a measured probability, and the shot's outcome is never
+ * simulated: the app shows the chance, not a random result.
+ */
+export const GOAL_WIDTH = 8;   // yards between the posts
+export const SHOT_RANGE = 35;  // beyond this the app does not offer a shot
+
+/** Angle of goal (radians) visible from a point. */
+export function goalAngle(p) {
+  const a = Math.atan2(GOAL.y - GOAL_WIDTH / 2 - p.y, GOAL.x - p.x);
+  const b = Math.atan2(GOAL.y + GOAL_WIDTH / 2 - p.y, GOAL.x - p.x);
+  return Math.abs(b - a);
+}
+
+/** Is point o inside the triangle from shooter s to both posts? */
+function inShotCone(o, s) {
+  const p1 = { x: GOAL.x, y: GOAL.y - GOAL_WIDTH / 2 }, p2 = { x: GOAL.x, y: GOAL.y + GOAL_WIDTH / 2 };
+  const sign = (a, b, c) => (a.x - c.x) * (b.y - c.y) - (b.x - c.x) * (a.y - c.y);
+  const d1 = sign(o, s, p1), d2 = sign(o, p1, p2), d3 = sign(o, p2, s);
+  const neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(neg && pos);
+}
+
+export function evaluateShot(from, ctx) {
+  const { defenders = [], teammates = [], skipAlternative = false } = ctx || {};
+  const keeper = defenders.find((o) => o.role === 'keeper');
+  const outfield = defenders.filter((o) => o.role !== 'keeper');
+  const d = distanceToGoal(from);
+  const angle = goalAngle(from);
+  const factors = [];
+  const note = (label, detail, points = 0) => factors.push({ points, label, detail });
+
+  // 1. Angle of goal: distance and position together.
+  const base = 0.55 * (1 - Math.exp(-1.15 * Math.pow(angle, 2.2)));
+  note(d < 12 ? 'Close to goal' : d < 20 ? 'Inside shooting range' : 'Long range',
+    `${round1(d)} yd out, with about ${Math.round((angle * 180) / Math.PI)}° of goal to aim at. On its own that is roughly ${Math.round(base * 100)} in 100.`);
+  let xg = base;
+
+  // 2. Opponents in the way (inside the triangle to the posts).
+  const blockers = outfield.filter((o) => o.x > from.x && inShotCone(o, from));
+  if (blockers.length) {
+    const m = Math.pow(0.6, Math.min(blockers.length, 3));
+    xg *= m;
+    note(`${blockers.length} opponent${blockers.length > 1 ? 's' : ''} in the way`, `${blockers.map((b) => b.pos).join(', ')} ${blockers.length > 1 ? 'are' : 'is'} between the ball and the goal and can block the shot.`, -1);
+  }
+
+  // 3. The keeper: well placed on the line between ball and goal, or not?
+  if (keeper) {
+    const t = clamp((keeper.x - from.x) / (GOAL.x - from.x), 0, 1);
+    const onLine = { x: from.x + (GOAL.x - from.x) * t, y: from.y + (GOAL.y - from.y) * t };
+    const off = dist(keeper, onLine);
+    if (off > 3) { xg *= 1.4; note('Keeper out of position', `The keeper is about ${round1(off)} yd off the line between the ball and the goal.`, 1); }
+    else note('Keeper well placed', 'The keeper is set between the ball and the middle of the goal.');
+  }
+
+  // 4. Pressure on the shooter.
+  const press = nearestDefender(from, outfield);
+  if (press.distance < 2.5) { xg *= 0.7; note('Shooting under pressure', `An opponent is ${round1(press.distance)} yd away, so the shot is rushed or blocked.`, -1); }
+  else if (press.distance < 5) { xg *= 0.85; note('Some pressure', `The nearest opponent is ${round1(press.distance)} yd away.`, -1); }
+
+  xg = clamp(xg, 0.01, 0.8);
+
+  // Was a teammate better placed? Pass success times his own shot.
+  let alternative = null;
+  if (!skipAlternative) {
+    for (const t of teammates) {
+      if (t.id === from.id || t.role === 'keeper' || distanceToGoal(t) > SHOT_RANGE) continue;
+      const passType = inferPassType(from, t, { defenders, teammates });
+      const pass = evaluatePass(from, t, { defenders, teammates, passType });
+      const their = evaluateShot(t, { defenders, teammates, skipAlternative: true }).xg;
+      const value = (pass.confidence / 100) * their;
+      if (!alternative || value > alternative.value) alternative = { player: t, pos: t.pos, passConfidence: pass.confidence, xg: their, value };
+    }
+    if (alternative && alternative.value <= xg * 1.15) alternative = null; // only flag a clearly better option
+  }
+
+  return {
+    kind: 'shot',
+    confidence: null,
+    xg: Math.round(xg * 100) / 100,
+    passType: 'shot',
+    passTypeLabel: 'Shot',
+    factors,
+    alternative,
+    metrics: {
+      passDistance: round1(d), travelTime: round1(d / SPEED.driven), xg: Math.round(xg * 100) / 100,
+      angleDeg: Math.round((angle * 180) / Math.PI), blockers: blockers.length,
+      distanceToGoalBefore: round1(d), distanceToGoalAfter: round1(d), progression: 0, linesBroken: 0,
+      effectiveSeparation: round1(press.distance),
+    },
+  };
+}
+
 /** How well a pass type suits the geometry. Returns -1..1 scaled points. */
 function passTypeFit(type, { d, lane, sep, fwd, spaceBehind }) {
   switch (type) {
@@ -464,7 +563,11 @@ export function evaluateSequence(sequence, scenario, opts = {}) {
     return { rating: 0, verdict: 'empty', headline: 'No sequence was played.', notes: [], concepts: [] };
   }
 
-  const confidences = sequence.map((s) => s.result.confidence);
+  // A shot is not a pass: it ends the move and is judged by its xG, not by
+  // whether it "gets through", so it is left out of the safety numbers.
+  const shot = sequence.find((s) => s.result.kind === 'shot');
+  const confidences = sequence.filter((s) => s.result.kind !== 'shot').map((s) => s.result.confidence);
+  if (!confidences.length) confidences.push(100);
   const weakest = Math.min(...confidences);
   const mean = confidences.reduce((a, b) => a + b, 0) / confidences.length;
   const last = sequence[sequence.length - 1];
@@ -479,6 +582,7 @@ export function evaluateSequence(sequence, scenario, opts = {}) {
   let rating = mean * 0.5 + clamp(totalProgression, -25, 40) * 0.8 + totalLines * 3.5;
   if (!survived) rating -= (45 - weakest) * 0.9;
   if (objectiveMet) rating += 14;
+  if (shot) rating += shot.result.xg * 60;
   if (sequence.length > (scenario.maxActions || 5)) rating -= 10;
   // A sequence the defence wins cannot be presented as a strong sequence,
   // however much ground it covered before it broke down.
@@ -497,11 +601,15 @@ export function evaluateSequence(sequence, scenario, opts = {}) {
   }
   if (totalProgression > 20) {
     notes.push({ tone: 'good', text: `The sequence moved the ball ${round1(totalProgression)} yd closer to goal.` });
-  } else if (totalProgression < 2) {
+  } else if (totalProgression < 2 && !shot) {
     notes.push({ tone: 'warn', text: 'Possession was kept, but the ball finished no closer to goal. Keeping the ball is a means, not the objective.' });
   }
   if (totalLines >= 2) {
     notes.push({ tone: 'good', text: `You played past ${totalLines} opponents across the sequence — that is what separates progression from circulation.` });
+  }
+  if (shot) {
+    const r = shot.result;
+    notes.push({ tone: r.xg >= 0.12 ? 'good' : 'warn', text: `The shot from ${r.metrics.passDistance} yd was worth ${r.xg.toFixed(2)} xG: about ${Math.round(r.xg * 100)} in 100 shots like it go in.${r.alternative ? ` The ${r.alternative.pos} was better placed: a ${r.alternative.passConfidence}% pass to a ${r.alternative.xg.toFixed(2)} xG chance.` : ''}` });
   }
   if (objectiveMet) {
     notes.push({ tone: 'good', text: `Objective met: ${scenario.objective}` });
@@ -512,8 +620,9 @@ export function evaluateSequence(sequence, scenario, opts = {}) {
   const verdict = !survived ? 'lost' : objectiveMet ? 'success' : 'partial';
   const headline =
     verdict === 'success' ? 'Objective achieved.'
-      : verdict === 'partial' ? 'Ball retained, objective missed.'
-        : 'The defence wins this sequence.';
+      : verdict === 'lost' ? 'The defence wins this sequence.'
+        : shot ? (shot.result.xg >= 0.12 ? 'A real chance, but the objective was missed.' : 'You shot, but it was a low-quality chance.')
+          : 'Ball retained, objective missed.';
 
   return {
     rating, verdict, headline, notes,

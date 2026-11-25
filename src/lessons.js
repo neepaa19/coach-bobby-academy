@@ -92,10 +92,37 @@ export function missionStatus(mission, history) {
       }
     }
 
+    if (item.type === 'chance') {
+      // Finish the move: a shot worth taking, or a real counterattack.
+      const after = item.after ? doneAt[item.after] : -1;
+      for (let i = 1; i < history.length; i++) {
+        if (after == null || i <= after) continue;
+        const pic = history[i];
+        const st = pic.step && pic.step.result;
+        if (st && st.kind === 'shot') {
+          if (st.xg >= (item.minXg || 0.12)) { done = true; at = i; detail = `A shot worth ${st.xg.toFixed(2)} xG: about ${Math.round(st.xg * 100)} in 100 like it go in.`; break; }
+          detail = `The shot was only worth ${st.xg.toFixed(2)} xG (${Math.round(st.xg * 100)} in 100). A good chance is ${Math.round((item.minXg || 0.12) * 100)} in 100 or better.`;
+          continue;
+        }
+        const c = carrierOf(pic);
+        if (!c || !['front', 'mid'].includes(unitOfPos(c.pos)) || pic.ball.x < 60) continue;
+        // Numbers: their outfield players goal-side of the ball against our attackers level or ahead.
+        const theirs = pic.theirs.filter((o) => o.role !== 'keeper' && o.x > pic.ball.x).length;
+        const ours = pic.ours.filter((p) => p.role !== 'keeper' && p.x >= pic.ball.x - 3).length; // includes the carrier
+        const space = Math.min(...pic.theirs.map((o) => dist(o, pic.ball)));
+        if (ours >= theirs && theirs <= (item.maxDefenders || 4) && space >= 4) {
+          done = true; at = i;
+          detail = `A real counterattack: ${ours} of your players against ${theirs} of theirs between the ball and goal, with the ${c.pos} in space.`;
+          break;
+        }
+      }
+      if (!done && !detail) detail = 'The move never produced a good shot or a counterattack with the numbers on your side.';
+    }
+
     if (item.type === 'safe') {
       // Rest defence behind the ball and no reckless action, all the way through.
       const actions = history.slice(1);
-      const badAction = actions.findIndex((pic) => pic.step && pic.step.result.confidence < (item.minConfidence || 55));
+      const badAction = actions.findIndex((pic) => pic.step && pic.step.result.kind !== 'shot' && pic.step.result.confidence < (item.minConfidence || 55));
       // Rest defence matters once the ball is moving forward, not at your own full-back.
       const thinRest = history.findIndex((pic, i) => i > 0 && pic.ball.x >= (item.fromX || 40) && behindBall(pic) < (item.behind || 3));
       broken = badAction >= 0 || thinRest >= 0;

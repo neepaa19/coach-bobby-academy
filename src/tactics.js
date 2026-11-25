@@ -197,8 +197,11 @@ export function planDefence({ ball, carrierId, attackers, defenders, homes, styl
     const home = homes.get(d.id) || d;
     if (isKeeper(d)) {
       const kd = clamp(backD * S.keeperSweep, 3, 17);
+      // On the line from the middle of the goal toward the ball, so he covers
+      // the angle the shooter would see; never further across than his posts.
+      const vx = ball.x - GOAL_X, vy = ball.y - MID_Y, vl = Math.hypot(vx, vy) || 1;
       plan.set(d.id, {
-        x: GOAL_X - kd, y: MID_Y + (ball.y - MID_Y) * 0.15, job: 'keeper',
+        x: GOAL_X + (vx / vl) * kd, y: clamp(MID_Y + (vy / vl) * kd, MID_Y - 3.6, MID_Y + 3.6), job: 'keeper',
         why: kd > 9
           ? `Starts ${Math.round(kd)} yd off his line to sweep up balls played in behind a high line.`
           : 'Stays near his line, shifting with the ball to narrow the angle.',

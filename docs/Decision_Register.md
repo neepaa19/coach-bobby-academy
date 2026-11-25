@@ -16,7 +16,8 @@ Approved decisions only, newest first. Ideas still being discussed live in the c
 | Realistic reaction and acceleration for every player | Approved, built (owner reported unrealistic closing speed) |
 | Lesson format: named idea, live 2–3 item checklist, debrief; first on "Build out against the press" | Approved, built |
 | Replace "11 hand-built plays" with concepts that generate many plays, starting from real match situations (e.g. striker wins the ball alone) | Approved direction, not built |
-| Shooting decisions using an expected-goals style estimate | Approved direction, not built |
+| Shooting decisions using an expected-goals style estimate | Approved, built |
+| Press lesson ends in a chance (good shot or counterattack with numbers), not just reaching an attacker | Approved, built |
 | Visuals: "option 1" — keep the top-down tactical view; add ball height and shadow for lofted balls, player facing, shots toward goal. No tilted camera or full 3-D for now | Approved, not built |
 | Formations taught inside the lesson plan (not a separate section), layered from basic to rare, always with in-possession and out-of-possession shapes | Approved, foundation built (formation library, shape card); curriculum order in `Curriculum_Plan.md` awaiting approval |
 | Real-team style profiles and a Chelsea-vs-opponent matchup view built on the style engine | Approved direction (extends existing Match Prep pillar), not built |
