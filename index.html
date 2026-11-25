@@ -42,10 +42,7 @@
         </div>
         <button class="btn btn-ghost btn-sm" id="pickerBtn">Change</button>
       </div>
-      <div class="objective">
-        <span class="objective-tag">Objective</span>
-        <p id="objectiveText">—</p>
-      </div>
+      <p class="objective"><span class="objective-tag">Goal</span> <span id="objectiveText">—</span></p>
       <details class="brief">
         <summary>Match brief</summary>
         <dl class="context">
@@ -65,12 +62,13 @@
           <span class="meta-item">Actions <b id="actionsUsed">0 / 5</b></span>
         </span>
       </div>
+      <div id="styleChips" class="style-chips"></div>
       <div id="board" class="board"></div>
       <div class="legend">
         <span><i class="dot us"></i>Us</span>
-        <span><i class="dot them"></i>Opponent</span>
+        <span><i class="dot them"></i>Them</span>
         <span><i class="dot zone"></i>Target zone</span>
-        <span class="legend-hint">Tap a teammate to pass · hold to preview</span>
+        <span class="legend-hint">Tap a teammate to pass · hold to preview · tap an opponent to see why he moved</span>
       </div>
       <div id="routeKey" class="route-key" hidden>
         <span data-route="primary"><i class="ln primary"></i>Primary option</span>

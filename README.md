@@ -25,8 +25,11 @@ src/
   scenarios.js        Scenario data, curriculum, youth coaching translations. Data only.
   app.js              Tactical board rendering, animation, interaction, UI wiring.
   library.js          Tactics Library — coach and club profiles, glossary. Self-registering.
+  tactics.js          Team styles and off-ball movement for all 22 players, with a reason
+                      for every movement. Pure functions, unit-tested.
 tests/
   engine.test.mjs     Engine unit tests (node, no dependencies). Run in CI on every push.
+  tactics.test.mjs    Movement tests: offside, no teleporting, no overlaps, styles differ.
   smoke.mjs           Full-app browser test at iPhone viewport (Playwright)
 docs/
   Scoring_Model.md    The published scoring model, in full
@@ -57,6 +60,7 @@ python3 -m http.server 8080
 
 ```bash
 node tests/engine.test.mjs        # engine unit tests, no dependencies
+node tests/tactics.test.mjs       # movement tests, no dependencies
 node tests/smoke.mjs              # full-app browser test (needs a local server + Playwright)
 ```
 
@@ -76,6 +80,11 @@ automatically:
 2. Netlify detects the commit
 3. Netlify publishes the repository root as a static site
 4. https://coachbobby.netlify.app serves the new version
+
+**Credits:** this site is on Netlify's free plan, where every production deploy (every
+push to `main`) spends credits. Work happens on branches; opening a pull request gives a
+free deploy preview to test on a phone. Merge to `main` only to publish, and batch
+approved changes into as few publishes as possible.
 
 There is no build step — `netlify.toml` publishes `.` directly. No ZIP uploads, no manual
 deploys. Typical deploy time is under ten seconds.

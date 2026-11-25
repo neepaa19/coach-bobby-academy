@@ -12,6 +12,7 @@ import {
 } from './engine.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
+import { reactToPass, styleFor, separate, DEF_STYLES, ATT_STYLES } from './tactics.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -49,7 +50,31 @@ const Units = {
 };
 const speed = (ydsPerSec) => formatSpeed(ydsPerSec, Units.get());
 
-const BALL_OFFSET = 2.75; // keeps the ball at the carrier's feet, clear of his label
+/*
+ * Orientation. Pitch data is always in yards with x = 0 our goal line and
+ * x = 105 theirs, y = 0 our right touchline. On a phone the pitch is drawn
+ * vertically, attacking up the screen, because a tall phone fits a tall
+ * pitch at almost twice the size. Wider screens draw it attacking right.
+ * One SVG transform does the mapping; text gets the inverse transform so
+ * labels always read the right way up.
+ */
+const ORIENT = {
+  vertical: {
+    root: 'matrix(0 -1 -1 0 68 105)',   // screen x = 68 - y, screen y = 105 - x
+    text: 'matrix(0 -1 -1 0 0 0)',
+    view: (v) => `${68 - v.y - v.h} ${105 - v.x - v.w} ${v.h} ${v.w}`,
+    ball: { x: -2.6, y: 0 },              // just below the marker on screen
+    arrow: '↑', direction: 'We attack up the pitch',
+  },
+  horizontal: {
+    root: 'matrix(1 0 0 -1 0 68)',       // screen x = x, screen y = 68 - y
+    text: 'matrix(1 0 0 -1 0 0)',
+    view: (v) => `${v.x} ${68 - v.y - v.h} ${v.w} ${v.h}`,
+    ball: { x: 0, y: -2.6 },
+    arrow: '→', direction: 'We attack this way',
+  },
+};
+const pickOrientation = () => (window.matchMedia('(max-width: 700px)').matches ? 'vertical' : 'horizontal');
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ============================ State ============================ */
@@ -65,6 +90,9 @@ const State = {
   analysis: null,
   busy: false,
   profile: Mastery.load(),
+  styles: { ours: 'possession', theirs: 'midBlock' },
+  reasons: new Map(),    // id -> why that player is where he is right now
+  startBall: null,
 };
 
 /* ============================ Board ============================ */
@@ -73,22 +101,31 @@ const Board = {
   svg: null,
   layers: {},
 
+  orient: ORIENT.vertical,
+
   mount(container) {
     container.innerHTML = '';
+    this.orientName = pickOrientation();
+    this.orient = ORIENT[this.orientName];
+    container.dataset.orient = this.orientName;
     const svg = el('svg', { class: 'pitch', preserveAspectRatio: 'xMidYMid meet' });
     this.svg = svg;
+    const root = el('g', { class: 'l-root', transform: this.orient.root });
+    svg.appendChild(root);
+    this.root = root;
     this.layers.pitch = el('g', { class: 'l-pitch' });
     this.layers.zones = el('g', { class: 'l-zones' });
     this.layers.arrows = el('g', { class: 'l-arrows' });
     this.layers.theirs = el('g', { class: 'l-theirs' });
     this.layers.ours = el('g', { class: 'l-ours' });
     this.layers.ball = el('g', { class: 'l-ball' });
-    Object.values(this.layers).forEach((l) => svg.appendChild(l));
+    Object.values(this.layers).forEach((l) => root.appendChild(l));
     container.appendChild(svg);
   },
 
   setView(view) {
-    this.svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    this.view = view;
+    this.svg.setAttribute('viewBox', this.orient.view(view));
   },
 
   drawPitch() {
@@ -128,9 +165,11 @@ const Board = {
         transform: `translate(${p.x} ${p.y})`,
         'data-id': p.id,
       });
-      g.appendChild(el('circle', { r: 2.5, class: 'hit' }));
-      g.appendChild(el('circle', { r: 1.95, class: 'marker' }));
-      g.appendChild(el('text', { y: 0.75, class: 'plabel' }, p.pos));
+      g.appendChild(el('circle', { r: 2.6, class: 'hit' }));
+      g.appendChild(el('circle', { r: 1.85, class: 'marker' }));
+      const t = el('g', { transform: this.orient.text });
+      t.appendChild(el('text', { y: 0.58, class: 'plabel' + (p.pos.length > 2 ? ' long' : '') }, p.pos));
+      g.appendChild(t);
       layer.appendChild(g);
       p._node = g;
     }
@@ -143,7 +182,8 @@ const Board = {
 
   drawBall(pos) {
     this.layers.ball.innerHTML = '';
-    const g = el('g', { class: 'ball', transform: `translate(${pos.x} ${pos.y + BALL_OFFSET})` });
+    const o = this.orient.ball;
+    const g = el('g', { class: 'ball', transform: `translate(${pos.x + o.x} ${pos.y + o.y})` });
     g.appendChild(el('circle', { r: 1.05, class: 'ball-outer' }));
     g.appendChild(el('circle', { r: 0.62, class: 'ball-inner' }));
     this.layers.ball.appendChild(g);
@@ -151,7 +191,8 @@ const Board = {
   },
 
   moveBall(x, y) {
-    if (this._ball) this._ball.setAttribute('transform', `translate(${x} ${y + BALL_OFFSET})`);
+    const o = this.orient.ball;
+    if (this._ball) this._ball.setAttribute('transform', `translate(${x + o.x} ${y + o.y})`);
   },
 
   clearArrows() { this.layers.arrows.innerHTML = ''; },
@@ -178,7 +219,7 @@ const Board = {
     g.appendChild(hit);
     if (label) {
       const mx = a.x + (b.x - a.x) * at, my = a.y + (b.y - a.y) * at;
-      const t = el('g', { transform: `translate(${mx} ${my})`, class: `route-tag ${cls}` });
+      const t = el('g', { transform: `translate(${mx} ${my}) ${this.orient.text}`, class: `route-tag ${cls}` });
       const w = label.length * 1.35 + 2.4;
       t.appendChild(el('rect', { x: -w / 2, y: -1.9, width: w, height: 3.8, rx: 1.9 }));
       t.appendChild(el('text', { y: 0.65 }, label));
@@ -198,75 +239,19 @@ const Board = {
 /* ==================== Opponent & support movement ==================== */
 
 /**
- * Where the defence wants to be, given where the ball now is.
- * Shape-anchored: every defender is pulled from his own starting position
- * toward the ball, keeping the block's relative structure intact.
+ * Both teams' reaction to a pass, from the team styles in tactics.js.
+ * Returns Maps of id -> { x, y, why } and records the reasons so the
+ * learner can tap any player and ask why he moved.
  */
-function defensiveTargets(ball, carrier) {
-  const targets = new Map();
-  let presser = null, bestD = Infinity;
-  for (const d of State.theirs) {
-    if (d.role === 'keeper') continue;
-    const dd = dist(d, carrier);
-    if (dd < bestD) { bestD = dd; presser = d; }
-  }
-
-  for (const d of State.theirs) {
-    const home = State.homes.get(d.id);
-    if (d.role === 'keeper') {
-      targets.set(d.id, { x: home.x, y: clamp(34 + (ball.y - 34) * 0.16, 28, 40) });
-      continue;
-    }
-    // Lateral compactness: slide toward the ball's side of the pitch.
-    const slide = (ball.y - home.y) * 0.3;
-    // Line height: the block steps toward the ball up the pitch.
-    const step = (ball.x - home.x) * 0.16;
-    let tx = home.x + step;
-    let ty = home.y + slide;
-
-    if (d === presser) {
-      // The nearest defender closes the carrier down rather than holding shape.
-      const dd = dist(d, carrier) || 1;
-      const ux = (carrier.x - d.x) / dd, uy = (carrier.y - d.y) / dd;
-      tx = carrier.x - ux * 2.4;
-      ty = carrier.y - uy * 2.4;
-    }
-    // Never occupy the same ground as an attacker. A defender marks from a
-    // body's distance; stacking two markers on one point is unreadable and
-    // wrongly reads as zero separation.
-    const MIN_GAP = 2.2;
-    for (const a of State.ours) {
-      const gap = Math.hypot(tx - a.x, ty - a.y);
-      if (gap < MIN_GAP && gap > 0.001) {
-        tx = a.x + ((tx - a.x) / gap) * MIN_GAP;
-        ty = a.y + ((ty - a.y) / gap) * MIN_GAP;
-      }
-    }
-    targets.set(d.id, { x: clamp(tx, 1, 104), y: clamp(ty, 1, 67) });
-  }
-  return targets;
-}
-
-/** Attacking support: nearest teammates offer an angle, the far side holds width. */
-function supportTargets(ball, carrierId) {
-  const targets = new Map();
-  for (const p of State.ours) {
-    const home = State.homes.get(p.id);
-    if (p.role === 'keeper' || p.id === carrierId) { targets.set(p.id, { x: p.x, y: p.y }); continue; }
-    const d = dist(p, ball);
-    if (d < 22) {
-      // Close support drifts to an angle rather than standing in line.
-      const away = p.y >= ball.y ? 1 : -1;
-      targets.set(p.id, {
-        x: clamp(p.x + (p.x > ball.x ? 1.6 : -0.8), 1, 104),
-        y: clamp(p.y + away * 1.6, 2, 66),
-      });
-    } else {
-      // Far side pulls back toward its shape anchor and holds width.
-      targets.set(p.id, { x: p.x + (home.x - p.x) * 0.25, y: p.y + (home.y - p.y) * 0.25 });
-    }
-  }
-  return targets;
+function planReaction(from, to, passType) {
+  const plan = reactToPass({
+    from, to, passType,
+    ours: State.ours, theirs: State.theirs, homes: State.homes,
+    styles: State.styles, startBall: State.startBall,
+  });
+  for (const [id, t] of plan.ours) State.reasons.set(id, t.why);
+  for (const [id, t] of plan.theirs) State.reasons.set(id, t.why);
+  return plan;
 }
 
 /* ============================ Animation ============================ */
@@ -283,15 +268,25 @@ function animatePass(from, to, passType) {
   const settleMs = 520;
   const total = travelMs + settleMs;
 
-  const defTargets = defensiveTargets(to, to);
-  const supTargets = supportTargets(to, to.id);
+  const plan = planReaction(from, to, passType);
+  const defTargets = plan.theirs;
+  const supTargets = plan.ours;
   const startPos = new Map();
   [...State.ours, ...State.theirs].forEach((p) => startPos.set(p.id, { x: p.x, y: p.y }));
+
+  // The camera follows the play: widen the view so nobody walks off the board.
+  const v0 = Board.view;
+  const after = [...State.ours, ...State.theirs].map((p) => ({ ...p, ...(supTargets.get(p.id) || defTargets.get(p.id) || {}) }));
+  const fit = fitView(State.scenario, after);
+  const v1x0 = Math.min(v0.x, fit.x), v1y0 = Math.min(v0.y, fit.y);
+  const v1 = { x: v1x0, y: v1y0, w: Math.max(v0.x + v0.w, fit.x + fit.w) - v1x0, h: Math.max(v0.y + v0.h, fit.y + fit.h) - v1y0 };
+  const lerpView = (t) => ({ x: v0.x + (v1.x - v0.x) * t, y: v0.y + (v1.y - v0.y) * t, w: v0.w + (v1.w - v0.w) * t, h: v0.h + (v1.h - v0.h) * t });
 
   if (reducedMotion()) {
     for (const p of State.theirs) { const t = defTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     for (const p of State.ours) { const t = supTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     Board.moveBall(to.x, to.y);
+    Board.setView(v1);
     return Promise.resolve();
   }
 
@@ -307,6 +302,7 @@ function animatePass(from, to, passType) {
       // Players: react across the whole window, slightly lagging the ball.
       const pt = clamp((elapsed - 90) / (total - 90), 0, 1);
       const pe = easeInOut(pt);
+      Board.setView(lerpView(pe));
       for (const p of State.theirs) {
         const s = startPos.get(p.id), t = defTargets.get(p.id);
         if (t) Board.move(p, s.x + (t.x - s.x) * pe, s.y + (t.y - s.y) * pe);
@@ -328,10 +324,21 @@ function animatePass(from, to, passType) {
 function loadScenario(id) {
   const s = SCENARIOS.find((x) => x.id === id) || SCENARIOS[0];
   State.scenario = s;
-  State.ours = s.ours.map((p) => ({ ...p }));
-  State.theirs = s.theirs.map((p) => ({ ...p }));
+  // Authored pictures sometimes stack two players on one spot. Nudge them
+  // apart once, so every marker can be seen and tapped; this nudged picture
+  // is the scenario's starting point everywhere (board, undo, review).
+  const spots = new Map([...s.ours, ...s.theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
+  separate(spots, new Set([s.startCarrier]));
+  State.startOurs = s.ours.map((p) => ({ ...p, ...spots.get(p.id) }));
+  State.startTheirs = s.theirs.map((p) => ({ ...p, ...spots.get(p.id) }));
+  State.ours = State.startOurs.map((p) => ({ ...p }));
+  State.theirs = State.startTheirs.map((p) => ({ ...p }));
   State.homes = new Map([...State.ours, ...State.theirs].map((p) => [p.id, { x: p.x, y: p.y }]));
   State.carrierId = s.startCarrier;
+  State.styles = styleFor(s);
+  const sc = State.ours.find((p) => p.id === s.startCarrier);
+  State.startBall = { x: sc.x, y: sc.y };
+  resetReasons();
   State.sequence = [];
   State.submitted = false;
   State.analysis = null;
@@ -348,6 +355,8 @@ function loadScenario(id) {
   Board.drawBall({ x: c.x, y: c.y });
 
   renderScenarioHeader();
+  renderStyleChips();
+  $('.direction').innerHTML = `<i aria-hidden="true">${Board.orient.arrow}</i> ${Board.orient.direction}`;
   refreshBoardState();
   renderSequence();
   $('#analysis').hidden = true;
@@ -359,8 +368,8 @@ function loadScenario(id) {
  * The scenario may declare a focus crop, but no player may ever be cut off:
  * the declared view is expanded until every marker on both teams fits.
  */
-function fitView(s) {
-  const all = [...s.ours, ...s.theirs].filter((p) => p.role !== 'keeper');
+function fitView(s, players) {
+  const all = (players || [...s.ours, ...s.theirs]).filter((p) => p.role !== 'keeper');
   const pad = 4.5;
   let x0 = Math.min(...all.map((p) => p.x)) - pad;
   let x1 = Math.max(...all.map((p) => p.x)) + pad;
@@ -380,6 +389,14 @@ function fitView(s) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** Before any pass, every player is simply where the scenario put him. */
+function resetReasons() {
+  State.reasons = new Map();
+  const them = DEF_STYLES[State.styles.theirs];
+  for (const p of State.theirs) State.reasons.set(p.id, `Starting position. The opponent is playing a ${them.label.toLowerCase()}: tap the style chip above the pitch to see what that means.`);
+  for (const p of State.ours) State.reasons.set(p.id, 'Starting position for this scenario.');
+}
+
 const carrier = () => State.ours.find((p) => p.id === State.carrierId);
 const outfieldTeammates = () => State.ours.filter((p) => p.id !== State.carrierId);
 
@@ -397,7 +414,7 @@ function refreshBoardState() {
   $('#finishBtn').disabled = State.submitted || used === 0;
   $('#undoBtn').disabled = State.submitted || used === 0;
   $('#finishBtn').textContent = State.submitted ? 'Sequence submitted' : 'Finish Sequence';
-  $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'Sequence in progress';
+  $('#stateBadge').textContent = State.submitted ? 'Reviewing' : used === 0 ? 'Your move' : 'In progress';
   $('#stateBadge').className = `badge ${State.submitted ? 'badge-review' : 'badge-live'}`;
   $('.action-bar').hidden = State.submitted;
   document.body.classList.toggle('no-action-bar', State.submitted);
@@ -440,23 +457,31 @@ function undo() {
   State.sequence.pop();
   // Rebuild deterministically from the scenario rather than reversing physics.
   const s = State.scenario;
-  State.ours = s.ours.map((p) => ({ ...p }));
-  State.theirs = s.theirs.map((p) => ({ ...p }));
+  State.ours = State.startOurs.map((p) => ({ ...p }));
+  State.theirs = State.startTheirs.map((p) => ({ ...p }));
+  Board.setView(fitView(s));
   Board.drawTeam('theirs', State.theirs, { className: 'them' });
   Board.drawTeam('ours', State.ours, { className: 'us' });
   State.carrierId = s.startCarrier;
+  resetReasons();
   const replay = [...State.sequence];
   State.sequence = [];
   const c0 = carrier();
   Board.drawBall({ x: c0.x, y: c0.y });
   for (const step of replay) {
     const rec = State.ours.find((p) => p.id === step.to.id);
-    const defTargets = defensiveTargets(rec, rec);
-    const supTargets = supportTargets(rec, rec.id);
+    const plan = planReaction(carrier(), rec, step.result.passType);
+    const defTargets = plan.theirs;
+    const supTargets = plan.ours;
     for (const p of State.theirs) { const t = defTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     for (const p of State.ours) { const t = supTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     State.carrierId = rec.id;
     State.sequence.push(step);
+  }
+  if (State.sequence.length) {
+    const a = fitView(s), b = fitView(s, [...State.ours, ...State.theirs]);
+    const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
+    Board.setView({ x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 });
   }
   const c = carrier();
   Board.moveBall(c.x, c.y);
@@ -491,8 +516,8 @@ function finishSequence() {
 function drawPostSubmissionOptions() {
   Board.clearArrows();
   const first = State.sequence[0];
-  const startOurs = State.scenario.ours.map((p) => ({ ...p }));
-  const startTheirs = State.scenario.theirs.map((p) => ({ ...p }));
+  const startOurs = State.startOurs.map((p) => ({ ...p }));
+  const startTheirs = State.startTheirs.map((p) => ({ ...p }));
   const startCarrier = startOurs.find((p) => p.id === State.scenario.startCarrier);
   const ranked = rankOptions(startCarrier, startOurs, startTheirs);
 
@@ -500,14 +525,16 @@ function drawPostSubmissionOptions() {
   // below describe THAT picture, and drawing them over the final, post-movement
   // board made them point at space that is no longer open.
   for (const p of State.ours) {
-    const home = State.scenario.ours.find((q) => q.id === p.id);
+    const home = State.startOurs.find((q) => q.id === p.id);
     if (home) Board.move(p, home.x, home.y);
   }
   for (const p of State.theirs) {
-    const home = State.scenario.theirs.find((q) => q.id === p.id);
+    const home = State.startTheirs.find((q) => q.id === p.id);
     if (home) Board.move(p, home.x, home.y);
   }
   Board.moveBall(startCarrier.x, startCarrier.y);
+  Board.setView(fitView(State.scenario));
+  resetReasons();
 
   const metaFor = (o) => o && ({
     from: startCarrier.pos, to: o.player.pos, confidence: o.confidence,
@@ -608,7 +635,15 @@ function attachBoardHandlers() {
     pressTimer = setTimeout(() => { showPreview(p); pressTimer = null; }, 380);
   };
   const up = (e) => {
-    if (State.busy || State.submitted) return;
+    if (State.busy) return;
+    // Opponents are not pass targets: a tap asks why he is standing there.
+    const oppNode = e.target.closest && e.target.closest('.l-theirs .player');
+    if (oppNode) {
+      const opp = State.theirs.find((p) => p.id === oppNode.dataset.id);
+      if (opp) showWhy(opp, 'them');
+      return;
+    }
+    if (State.submitted) return;
     const wasHold = pressTimer === null && previewOpen;
     clearTimeout(pressTimer);
     if (wasHold) { pressTarget = null; return; }
@@ -652,12 +687,48 @@ function showPreview(receiver) {
           <span class="tval">${t.confidence}%</span>
         </button>`).join('')}
     </div>
+    <p class="preview-why"><b>Why he is there:</b> ${State.reasons.get(receiver.id) || ''}</p>
     <p class="preview-foot">Tap a pass type to play it, or release and tap the player to let the engine choose.</p>
   `;
   box.hidden = false;
   $('#previewClose').onclick = hidePreview;
   $$('.type-row', box).forEach((btn) => {
     btn.onclick = () => { hidePreview(); playPass(receiver, btn.dataset.type); };
+  });
+}
+
+/** Tap an opponent: who he is and why he is standing exactly there. */
+function showWhy(player, side) {
+  previewOpen = true;
+  const box = $('#preview');
+  const style = side === 'them' ? DEF_STYLES[State.styles.theirs] : ATT_STYLES[State.styles.ours];
+  box.innerHTML = `
+    <div class="preview-head">
+      <strong><span class="who ${side}">${side === 'them' ? 'Their' : 'Our'} ${player.pos}</span></strong>
+      <button class="icon-btn" id="previewClose" aria-label="Close">✕</button>
+    </div>
+    <p class="why-text">${State.reasons.get(player.id) || ''}</p>
+    <p class="preview-foot">${style.label}. Tap the style chip above the pitch for the full picture.</p>
+  `;
+  box.hidden = false;
+  $('#previewClose').onclick = hidePreview;
+}
+
+/** The style chips: what each team is trying to do, in plain English. */
+function renderStyleChips() {
+  const them = DEF_STYLES[State.styles.theirs];
+  const us = ATT_STYLES[State.styles.ours];
+  const host = $('#styleChips');
+  if (!host) return;
+  host.innerHTML = `
+    <button class="style-chip them" data-side="them"><i></i>Them: ${them.label}</button>
+    <button class="style-chip us" data-side="us"><i></i>Us: ${us.label}</button>`;
+  $$('.style-chip', host).forEach((b) => {
+    b.onclick = () => {
+      const st = b.dataset.side === 'them' ? them : us;
+      openSheet(st.label, `<p class="style-summary">${st.summary}</p>
+        <p class="muted small">This is a coaching model of the style, used to move every player on the board. It is not a claim about how any particular real team plays. Tap any opponent on the pitch to see why he moved.</p>`);
+    };
   });
 }
 
@@ -1041,6 +1112,7 @@ function renderScenarioPicker() {
 /* ---------------------------- Chrome ---------------------------- */
 
 function switchTab(name) {
+  document.body.dataset.tab = name;
   $$('.screen').forEach((s) => { s.hidden = s.dataset.screen !== name; });
   $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   if (name === 'profile') renderProfile();
@@ -1080,6 +1152,12 @@ function boot() {
   Board.svg.insertBefore(defs, Board.svg.firstChild);
 
   $$('.tab').forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
+  // Feature modules switch screens themselves; record the active tab for all of them
+  // so the train-only status badge never shows on another screen.
+  $('.tabbar').addEventListener('click', (e) => {
+    const t = e.target.closest('.tab');
+    if (t) document.body.dataset.tab = t.dataset.tab;
+  });
   $('#finishBtn').onclick = finishSequence;
   $('#undoBtn').onclick = undo;
   $('#restartBtn').onclick = () => loadScenario(State.scenario.id);

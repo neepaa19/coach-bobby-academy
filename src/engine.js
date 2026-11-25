@@ -176,7 +176,7 @@ export function evaluatePass(from, to, ctx) {
   const sepNorm = clamp((sep.effective - 1.5) / 8, -1, 1);
   score += add(
     sepNorm * WEIGHTS.separation,
-    sep.effective >= 4 ? 'Receiver has room' : 'Receiver is tight',
+    sep.effective >= 4 ? 'Receiver has room' : sep.effective >= 1.5 ? 'Receiver has a little room' : 'Receiver is tight',
     `${round1(sep.start)} yd of starting separation; the nearest defender closes about ${round1(sep.closing)} yd while the ball travels, leaving roughly ${round1(sep.effective)} yd on the ball's arrival.`
   );
 
@@ -242,7 +242,10 @@ export function evaluatePass(from, to, ctx) {
   }
 
   // 9. Does the chosen pass type fit the picture?
-  const fit = passTypeFit(passType, { d, lane, sep, fwd });
+  // Space behind: no opponent just goal-side of the receiver, so a ball
+  // played beyond him can be run onto rather than played to feet.
+  const spaceBehind = !defenders.some((o) => o.x > to.x && o.x - to.x < 9 && Math.abs(o.y - to.y) < 7);
+  const fit = passTypeFit(passType, { d, lane, sep, fwd, spaceBehind });
   score += add(fit.points * WEIGHTS.typeFit, fit.label, fit.detail);
 
   const confidence = Math.round(clamp(score, 3, 97));
@@ -269,16 +272,18 @@ export function evaluatePass(from, to, ctx) {
 }
 
 /** How well a pass type suits the geometry. Returns -1..1 scaled points. */
-function passTypeFit(type, { d, lane, sep, fwd }) {
+function passTypeFit(type, { d, lane, sep, fwd, spaceBehind }) {
   switch (type) {
     case 'driven':
       return d > 22
         ? { points: 0.5, label: 'Driven ball suits the distance', detail: 'Driven passes cut the defence’s reaction time on longer range.' }
         : { points: -0.4, label: 'Driven ball is heavy here', detail: 'Over short range a driven pass is harder to control than a simple ground pass.' };
     case 'through':
-      return fwd > 0.6 && sep.effective > 1
-        ? { points: 0.6, label: 'Through ball attacks the space behind', detail: 'The receiver is running beyond, so the ball is played into space rather than to feet.' }
-        : { points: -0.6, label: 'No space to run into', detail: 'A through ball needs a runner and space behind the defence; neither is clearly present.' };
+      // A through ball is played into space for a runner. It only fits a
+      // forward pass of real length with open grass beyond the receiver.
+      return fwd > 0.68 && d >= 14 && spaceBehind && sep.effective > 1
+        ? { points: 0.6, label: 'Through ball attacks the space behind', detail: 'There is open grass beyond the receiver, so the ball can be played into his run rather than to his feet.' }
+        : { points: -0.7, label: 'No space to run into', detail: 'A through ball needs a forward run and open space beyond the receiver; here the pass is to feet.' };
     case 'chip':
       return lane.risk > 0.45
         ? { points: 0.55, label: 'Lofted ball clears the traffic', detail: 'Lifting the pass takes the covering defender out of the equation.' }
@@ -324,7 +329,10 @@ export function rankOptions(carrier, teammates, defenders) {
         effectiveSeparation: r.metrics.effectiveSeparation,
         // Value blends safety with penetration — a 95% backward pass is not
         // automatically better coaching than an 80% line-breaking pass.
-        value: r.confidence * 0.62 + clamp(r.metrics.progression, -20, 26) * 1.5 + r.metrics.linesBroken * 4,
+        value: r.confidence * 0.62 + clamp(r.metrics.progression, -20, 26) * 1.5 + r.metrics.linesBroken * 4
+          // ...but a pass the defence is favourite to win is not a recommendation,
+          // however far it travels. Below 55% the penalty grows quickly.
+          - Math.max(0, 55 - r.confidence) * 1.6,
       };
     })
     .sort((a, b) => b.value - a.value);

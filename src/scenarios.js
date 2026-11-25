@@ -16,30 +16,33 @@ const squad = (rows) =>
 
 const opp442MidBlock = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 88, 14], ['o-rcb', 'RCB', 90, 27], ['o-lcb', 'LCB', 90, 41], ['o-lb', 'LB', 88, 54],
-  ['o-rm', 'RM', 74, 15], ['o-rcm', 'RCM', 74, 28], ['o-lcm', 'LCM', 74, 40], ['o-lm', 'LM', 74, 53],
-  ['o-rs', 'ST', 60, 29], ['o-ls', 'ST', 60, 39],
+  ['o-lb', 'LB', 88, 14], ['o-lcb', 'LCB', 90, 27], ['o-rcb', 'RCB', 90, 41], ['o-rb', 'RB', 88, 54],
+  ['o-lm', 'LM', 74, 15], ['o-lcm', 'LCM', 74, 28], ['o-rcm', 'RCM', 74, 40], ['o-rm', 'RM', 74, 53],
+  ['o-ls', 'ST', 60, 29], ['o-rs', 'ST', 60, 39],
 ]);
 
+// A pressing team pushes its back line up behind the press. The original
+// shape left a 35-yard hole between midfield and defence that no real
+// pressing side would leave; the back four now sit just past halfway.
 const opp433HighPress = squad([
-  ['o-gk', 'GK', 100, 34, 'keeper'],
-  ['o-rb', 'RB', 74, 12], ['o-rcb', 'RCB', 78, 28], ['o-lcb', 'LCB', 78, 40], ['o-lb', 'LB', 74, 56],
-  ['o-dm', 'DM', 62, 34], ['o-rcm', 'RCM', 52, 25], ['o-lcm', 'LCM', 52, 43],
-  ['o-rw', 'RW', 34, 17], ['o-st', 'ST', 30, 34], ['o-lw', 'LW', 34, 51],
+  ['o-gk', 'GK', 92, 34, 'keeper'],
+  ['o-lb', 'LB', 64, 12], ['o-lcb', 'LCB', 67, 28], ['o-rcb', 'RCB', 67, 40], ['o-rb', 'RB', 64, 56],
+  ['o-dm', 'DM', 62, 34], ['o-lcm', 'LCM', 52, 25], ['o-rcm', 'RCM', 52, 43],
+  ['o-lw', 'LW', 34, 17], ['o-st', 'ST', 30, 34], ['o-rw', 'RW', 34, 51],
 ]);
 
 const oppLowBlock = squad([
   ['o-gk', 'GK', 102, 34, 'keeper'],
-  ['o-rb', 'RB', 94, 18], ['o-rcb', 'RCB', 96, 29], ['o-lcb', 'LCB', 96, 39], ['o-lb', 'LB', 94, 50],
-  ['o-rm', 'RM', 86, 20], ['o-rcm', 'RCM', 87, 30], ['o-lcm', 'LCM', 87, 38], ['o-lm', 'LM', 86, 48],
+  ['o-lb', 'LB', 94, 18], ['o-lcb', 'LCB', 96, 29], ['o-rcb', 'RCB', 96, 39], ['o-rb', 'RB', 94, 50],
+  ['o-lm', 'LM', 86, 20], ['o-lcm', 'LCM', 87, 30], ['o-rcm', 'RCM', 87, 38], ['o-rm', 'RM', 86, 48],
   ['o-am', 'AM', 78, 34], ['o-st', 'ST', 68, 34],
 ]);
 
 const oppTransition = squad([
   ['o-gk', 'GK', 101, 34, 'keeper'],
-  ['o-rb', 'RB', 70, 12], ['o-rcb', 'RCB', 82, 30], ['o-lcb', 'LCB', 84, 41], ['o-lb', 'LB', 68, 58],
-  ['o-dm', 'DM', 66, 33], ['o-rcm', 'RCM', 50, 24], ['o-lcm', 'LCM', 48, 44],
-  ['o-rw', 'RW', 40, 14], ['o-st', 'ST', 38, 36], ['o-lw', 'LW', 42, 54],
+  ['o-lb', 'LB', 70, 12], ['o-lcb', 'LCB', 82, 30], ['o-rcb', 'RCB', 84, 41], ['o-rb', 'RB', 68, 58],
+  ['o-dm', 'DM', 66, 33], ['o-lcm', 'LCM', 50, 24], ['o-rcm', 'RCM', 48, 44],
+  ['o-lw', 'LW', 40, 14], ['o-st', 'ST', 38, 36], ['o-rw', 'RW', 42, 54],
 ]);
 
 /* ---------------------------- Scenarios ---------------------------- */
@@ -67,7 +70,7 @@ export const SCENARIOS = [
       ['u-gk', 'GK', 8, 34, 'keeper'],
       ['u-rb', 'RB', 26, 8], ['u-rcb', 'RCB', 20, 26], ['u-lcb', 'LCB', 20, 42], ['u-lb', 'LB', 26, 60],
       ['u-dm', 'DM', 34, 34], ['u-rcm', 'RCM', 46, 22], ['u-lcm', 'LCM', 46, 46],
-      ['u-rw', 'RW', 62, 8], ['u-st', 'ST', 64, 30], ['u-lw', 'LW', 62, 60],
+      ['u-rw', 'RW', 60, 8], ['u-st', 'ST', 60, 32], ['u-lw', 'LW', 60, 60],
     ]),
     theirs: opp433HighPress,
   },

@@ -619,3 +619,76 @@ li.empty { list-style: none; padding: 12px 0; }
 .dir-hit:active { background: rgba(53,211,165,.12); }
 .dir-hit .dir-club { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
 .dir-hit .dir-club em { font-style: normal; font-size: .72rem; color: var(--dim); }
+
+/* =====================================================================
+   Revamp — pitch-first train screen (November 2026)
+   The board is the content. The scenario card shrinks to a title, a
+   one-line goal and a collapsed brief, and on a phone the pitch is drawn
+   vertically so it is nearly twice the size and clears the Finish bar.
+   ===================================================================== */
+
+.scenario-card { padding: 12px 14px; }
+.scenario-card .scenario-head h2 { font-size: 1.04rem; }
+.scenario-card .scenario-head p { font-size: .8rem; }
+.scenario-card .objective {
+  margin-top: 8px; padding: 8px 10px; border-radius: 10px;
+  font-size: .86rem; font-weight: 550; line-height: 1.35;
+}
+.scenario-card .objective-tag { display: inline; margin: 0 4px 0 0; font-size: .64rem; }
+.scenario-card .brief summary { padding-top: 8px; font-size: .82rem; }
+
+.board-card { padding: 8px 8px 10px; }
+.board-meta { margin: 2px 4px 6px; }
+.pitch { max-height: calc(100svh - 300px); margin: 0 auto; }
+.board[data-orient="vertical"] .pitch { width: 100%; }
+
+.style-chips { display: flex; gap: 6px; margin: 0 2px 6px; flex-wrap: wrap; }
+.style-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.04); color: var(--text); font: inherit; font-size: .74rem; font-weight: 650; cursor: pointer;
+}
+.style-chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.style-chip.them i { background: #f07a45; }
+.style-chip.us i { background: #6fb4ff; }
+.style-summary { margin-bottom: 10px; line-height: 1.5; }
+
+/* Markers: two teams that cannot be confused. Ours light with dark text,
+   theirs deep orange with white text. */
+.player .marker { stroke: rgba(0,0,0,.5); stroke-width: .24; }
+.player .plabel { font-size: 1.85px; }
+.player .plabel.long { font-size: 1.45px; letter-spacing: 0; }
+.l-theirs .marker { fill: #f07a45; }
+.l-theirs .plabel { fill: #ffffff; }
+.l-theirs .keeper .marker { fill: #ffd2b8; }
+.l-theirs .keeper .plabel { fill: #3a1a06; }
+.l-theirs .player { cursor: help; }
+.dot.them { background: #f07a45; }
+
+.preview-why { margin-top: 10px; font-size: .84rem; color: var(--muted); }
+.preview-why b { color: var(--text); }
+.why-text { font-size: .92rem; line-height: 1.5; }
+.who.them { color: #ffb08a; }
+.who.us { color: #9fcbff; }
+
+/* The status badge describes the training board only. */
+body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
+
+@media (max-width: 700px) {
+  .appbar { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px; }
+  .appbar p { display: none; }
+  .crest { width: 28px; height: 28px; border-radius: 8px; }
+  .crest::after { inset: 7px; }
+  main { padding-top: 10px; }
+  .card { margin-bottom: 10px; }
+  .scenario-card .scenario-head { align-items: center; }
+  .scenario-card .scenario-head p { display: none; }
+  .scenario-card .btn-sm { min-height: 40px; padding: 0 12px; }
+  .scenario-card .brief { margin-top: 6px; padding-top: 0; border-top: 0; }
+  .scenario-card .brief summary { padding-top: 4px; }
+  .board-meta { flex-wrap: nowrap; }
+  .direction, .meta-item { font-size: .72rem; white-space: nowrap; }
+  .meta-right { gap: 10px; }
+  /* Header + scenario card + chips + Finish bar + tab bar: the pitch gets the rest. */
+  .pitch { max-height: calc(100svh - 385px); }
+}

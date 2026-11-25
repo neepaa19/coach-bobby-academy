@@ -35,9 +35,11 @@
 
 ---
 
-## Next Version
+## v8
 
-### v8 (Planned)
+Shipped August 2026 (the docs still listed it as planned).
+
+### v8 scope
 
 - Smooth defender animations
 - Smooth attacking support movement
@@ -49,3 +51,19 @@
 - Coaching Library foundation
 - Coach Repository foundation
 - Player Repository foundation
+
+---
+
+## v9 — Movement and interface revamp (November 2026)
+
+- **Team styles drive every player**: high press, mid block, low block, recovering (opponent); possession build-up (us). See `docs/Movement_Model.md`.
+- Pressing in pairs with curved runs, flat back lines, block slide and squeeze, man-oriented midfield where the style calls for it.
+- Attackers stay onside, find pockets with clear lanes, make overlaps and box runs; forwards hold height on backward passes.
+- Nobody teleports: jog and sprint speeds limit every run to the ball's travel time.
+- Tap any opponent to see why he moved; hold a teammate to see why he is there. Style chips explain each team's plan.
+- Vertical pitch on phones (attacking up the screen), about twice the size; the camera widens to follow play.
+- Compact scenario card; the Finish bar no longer covers players; markers never overlap; the two teams are visually distinct.
+- Fixed opponent left/right labels (their right back now faces our left winger).
+- Fixed the high-press scenario's 35-yard gap between midfield and defence.
+- Scoring: "through ball" only when there is space beyond the receiver; the primary recommendation no longer goes to a pass the defence is favourite to win.
+- New `tests/tactics.test.mjs` (8 tests), 3 new engine tests; both run in CI.

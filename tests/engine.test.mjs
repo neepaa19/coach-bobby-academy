@@ -158,4 +158,28 @@ test('every player sits inside the pitch', () => {
   }
 });
 
+
+test('a through ball only fits when there is space beyond the receiver', () => {
+  const from = P('a', 'CM', 40, 34), to = P('b', 'ST', 58, 34);
+  const open = evaluatePass(from, to, { defenders: [P('d', 'X', 50, 10)], passType: 'through' });
+  const closed = evaluatePass(from, to, { defenders: [P('d', 'X', 50, 10), P('e', 'CB', 62, 35)], passType: 'through' });
+  assert.ok(open.factors.some((f) => f.label.startsWith('Through ball attacks')), 'open space should suit a through ball');
+  assert.ok(closed.factors.some((f) => f.label === 'No space to run into'), 'a defender behind the receiver rules it out');
+});
+
+test('a wide-open short pass is rated as a safe pass (80%+)', () => {
+  const from = P('a', 'CB', 30, 34), to = P('b', 'CM', 40, 42);
+  const r = evaluatePass(from, to, { defenders: [P('d1', 'X', 60, 20), P('d2', 'X', 55, 60)], passType: 'ground' });
+  assert.ok(r.confidence >= 80, `got ${r.confidence}`);
+});
+
+test('the primary recommendation is never a pass the defence is favourite to win when a safe forward option exists', () => {
+  const c = P('a', 'CB', 20, 34);
+  const safeForward = P('b', 'CM', 34, 40);
+  const riskyLong = P('c', 'ST', 70, 34);
+  const defs = [P('d1', 'X', 68, 36), P('d2', 'X', 72, 32), P('d3', 'X', 50, 10)];
+  const r = rankOptions(c, [c, safeForward, riskyLong], defs);
+  assert.equal(r.primary.player.id, 'b', `primary was ${r.primary.player.pos} at ${r.primary.confidence}%`);
+});
+
 console.log(`\n${passed} passing`);
