@@ -261,7 +261,11 @@ export function evaluatePass(from, to, ctx) {
   // Space behind: no opponent just goal-side of the receiver, so a ball
   // played beyond him can be run onto rather than played to feet.
   const spaceBehind = !defenders.some((o) => o.x > to.x && o.x - to.x < 9 && Math.abs(o.y - to.y) < 7);
-  const fit = passTypeFit(passType, { d, lane, sep, fwd, spaceBehind });
+  // ...and a through ball is played in behind the defence, so the receiver
+  // must be near their back line (the second-deepest opponent, after the keeper).
+  const xs = defenders.map((o) => o.x).sort((a, b) => b - a);
+  const nearLastLine = xs.length < 2 || to.x >= xs[1] - 10;
+  const fit = passTypeFit(passType, { d, lane, sep, fwd, spaceBehind: spaceBehind && nearLastLine });
   score += add(fit.points * WEIGHTS.typeFit, fit.label, fit.detail);
 
   const confidence = Math.round(clamp(score, 3, 97));

@@ -886,10 +886,15 @@ function showPreview(receiver) {
   const top = types[0];
   const m = top.metrics;
   const box = $('#preview');
+  const band = top.confidence >= 75 ? 'low' : top.confidence >= 55 ? 'medium' : 'high';
   box.innerHTML = `
     <div class="preview-head">
       <strong>${from.pos} → ${receiver.pos}</strong>
       <button class="icon-btn" id="previewClose" aria-label="Close preview">✕</button>
+    </div>
+    <div class="preview-risk risk-${band}">
+      <b>${top.confidence}%</b>
+      <span><em>${band === 'low' ? 'Low' : band === 'medium' ? 'Medium' : 'High'} risk</em>chance this ${top.label.toLowerCase()} gets through</span>
     </div>
     <div class="preview-grid">
       <div><span>Receiver separation</span><b>${m.effectiveSeparation} yd</b><em>on the ball's arrival</em></div>

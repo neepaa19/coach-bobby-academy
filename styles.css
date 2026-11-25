@@ -820,3 +820,46 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
   .style-chips { flex-wrap: nowrap; }
   .style-chip { font-size: .68rem; padding: 4px 8px; gap: 5px; min-height: 30px; white-space: nowrap; }
 }
+
+/* Pass preview: a clear risk headline, and on phones a panel pinned above
+   the tab bar so it is never hidden below the pitch. */
+.preview-risk { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px; border: 1px solid var(--line); }
+.preview-risk b { font-size: 1.6rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.preview-risk span { font-size: .8rem; color: var(--muted); line-height: 1.3; }
+.preview-risk em { display: block; font-style: normal; font-weight: 800; font-size: .9rem; }
+.preview-risk.risk-low { background: rgba(53,211,165,.1); border-color: rgba(53,211,165,.45); }
+.preview-risk.risk-low b, .preview-risk.risk-low em { color: var(--accent); }
+.preview-risk.risk-medium { background: rgba(255,194,71,.09); border-color: rgba(255,194,71,.45); }
+.preview-risk.risk-medium b, .preview-risk.risk-medium em { color: var(--warn); }
+.preview-risk.risk-high { background: rgba(255,107,107,.09); border-color: rgba(255,107,107,.45); }
+.preview-risk.risk-high b, .preview-risk.risk-high em { color: var(--danger); }
+.board { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+@media (max-width: 700px) {
+  .preview {
+    position: fixed; left: 8px; right: 8px; margin: 0; z-index: 48;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    max-height: 58svh; overflow-y: auto;
+    box-shadow: 0 -10px 40px rgba(0,0,0,.55);
+  }
+}
+@media (max-width: 700px) {
+  /* Compact preview: the risk and the pass types matter most; keep the pitch visible above. */
+  .preview { max-height: 46svh; padding: 10px 12px; }
+  .preview-head { margin-bottom: 6px; }
+  .preview-risk { padding: 8px 10px; margin-bottom: 8px; }
+  .preview-risk b { font-size: 1.35rem; }
+  .preview-grid { gap: 6px; }
+  .preview-grid > div { padding: 6px 8px; }
+  .preview-grid b { font-size: .95rem; }
+  .preview-grid em { display: none; }
+  .preview-types { margin-top: 8px; }
+  .type-row { min-height: 40px; margin-bottom: 4px; }
+  .preview-why, .preview-foot { font-size: .74rem; }
+}
+@media (max-width: 700px) {
+  /* The pitch fills the lower half of a phone, so the preview sits at the top. */
+  .preview { top: calc(54px + env(safe-area-inset-top)); bottom: auto; max-height: 50svh; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+  .preview-grid { display: none; }
+  .preview-foot { display: none; }
+}
