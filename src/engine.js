@@ -455,7 +455,7 @@ export function rankOptions(carrier, teammates, defenders) {
  * Grade a completed sequence against the scenario objective.
  * Returns a verdict, a 0-100 sequence rating, and concept evidence.
  */
-export function evaluateSequence(sequence, scenario) {
+export function evaluateSequence(sequence, scenario, opts = {}) {
   if (!sequence.length) {
     return { rating: 0, verdict: 'empty', headline: 'No sequence was played.', notes: [], concepts: [] };
   }
@@ -469,7 +469,8 @@ export function evaluateSequence(sequence, scenario) {
 
   // Survival: the sequence is only as strong as its weakest pass.
   const survived = weakest >= 45;
-  const objectiveMet = checkObjective(sequence, scenario);
+  // A lesson with a checklist decides the objective itself (see lessons.js).
+  const objectiveMet = opts.objectiveMet != null ? opts.objectiveMet : checkObjective(sequence, scenario);
 
   let rating = mean * 0.5 + clamp(totalProgression, -25, 40) * 0.8 + totalLines * 3.5;
   if (!survived) rating -= (45 - weakest) * 0.9;

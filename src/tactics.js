@@ -131,6 +131,15 @@ const isKeeper = (p) => p.role === 'keeper';
 const BACK_RE = /^(GK|[LR]?CB|[LR]B|[LR]WB|SW)$/;
 const FRONT_RE = /^([LR]W|ST|CF|[LR]S|[LR]F|SS)$/;
 const MID_RE = /^([LR]?DM|[LR]?CM|[LR]?AM|[LR]M)$/;
+/** Unit from a position label alone: 'back' | 'mid' | 'front' | null. */
+export function unitOfPos(pos) {
+  if (/^GK$/.test(pos)) return 'keeper';
+  if (BACK_RE.test(pos)) return 'back';
+  if (FRONT_RE.test(pos)) return 'front';
+  if (MID_RE.test(pos)) return 'mid';
+  return null;
+}
+
 function unitsByDepth(players, homes, depthOf) {
   const outfield = players.filter((p) => !isKeeper(p));
   const depths = outfield.map((p) => depthOf(homes.get(p.id) || p));

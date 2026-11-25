@@ -19,8 +19,9 @@
 
 import { evaluatePass, evaluateCarry, inferPassType, rankOptions, evaluateSequence, checkObjective, dist, clamp } from './engine.js';
 import { reactToPass } from './tactics.js';
+import { missionStatus, snapshot } from './lessons.js';
 
-const BEAM = 8;      // partial sequences kept per depth
+const BEAM = 12;     // partial sequences kept per depth
 const BRANCH = 8;    // passes tried from each position
 
 const snap = (p) => ({ x: p.x, y: p.y, id: p.id, pos: p.pos });
@@ -54,21 +55,28 @@ function apply(state, option, homes, styles, startBall) {
   }
   const step = { kind, from: snap(from), to: snap(to), fromLabel: from.pos, toLabel: to.pos, result };
   const plan = reactToPass({ from, to, passType, ours: state.ours, theirs: state.theirs, homes, styles, startBall });
+  const ours = state.ours.map((p) => ({ ...p, x: plan.ours.get(p.id).x, y: plan.ours.get(p.id).y }));
+  const theirs = state.theirs.map((p) => ({ ...p, x: plan.theirs.get(p.id).x, y: plan.theirs.get(p.id).y }));
   return {
-    ours: state.ours.map((p) => ({ ...p, x: plan.ours.get(p.id).x, y: plan.ours.get(p.id).y })),
-    theirs: state.theirs.map((p) => ({ ...p, x: plan.theirs.get(p.id).x, y: plan.theirs.get(p.id).y })),
+    ours, theirs,
     carrierId: to.id,
     sequence: [...state.sequence, step],
+    history: [...state.history, snapshot(ours, theirs, to.id, step)],
   };
 }
 
-function grade(seq, scenario) {
-  const a = evaluateSequence(seq, scenario);
-  const met = checkObjective(seq, scenario) && a.verdict !== 'lost';
+function grade(seq, scenario, history) {
+  const status = scenario.mission ? missionStatus(scenario.mission, history) : null;
+  const objectiveMet = status ? status.every((x) => x.done) : checkObjective(seq, scenario);
+  const a = evaluateSequence(seq, scenario, { objectiveMet });
+  const met = objectiveMet && a.verdict !== 'lost';
+  // Partial credit for checklist items, so the search keeps routes that have
+  // already done the first part (drawing the press) and can finish the rest.
+  const progress = status ? status.filter((x) => x.done).length * 40 - status.filter((x) => x.broken).length * 60 : 0;
   // Objective first, then the rating the learner would get. A coach would
   // rather see a safe route than a lucky one, so the weakest pass counts too;
   // brevity breaks ties.
-  return { analysis: a, met, key: (met ? 1000 : 0) + a.rating + a.summary.weakestPass * 0.5 - seq.length * 0.5 };
+  return { analysis: a, met, key: (met ? 1000 : 0) + progress + a.rating + a.summary.weakestPass * 0.5 - seq.length * 0.5 };
 }
 
 /**
@@ -76,7 +84,7 @@ function grade(seq, scenario) {
  */
 export function bestSequence({ scenario, ours, theirs, homes, styles, startBall }) {
   const max = scenario.maxActions || 5;
-  let frontier = [{ ours, theirs, carrierId: scenario.startCarrier, sequence: [] }];
+  let frontier = [{ ours, theirs, carrierId: scenario.startCarrier, sequence: [], history: [snapshot(ours, theirs, scenario.startCarrier)] }];
   let best = null;
 
   for (let depth = 0; depth < max; depth++) {
@@ -94,7 +102,7 @@ export function bestSequence({ scenario, ours, theirs, homes, styles, startBall 
       const ranked = [...passes, ...carries].sort((a, b) => b.value - a.value).slice(0, BRANCH);
       for (const o of ranked) {
         const child = apply(state, o, homes, styles, startBall);
-        const g = grade(child.sequence, scenario);
+        const g = grade(child.sequence, scenario, child.history);
         child.g = g;
         if (!best || g.key > best.g.key) best = child;
         // A sequence the defence wins, or one that already met the objective, stops here.
@@ -107,5 +115,5 @@ export function bestSequence({ scenario, ours, theirs, homes, styles, startBall 
   }
 
   if (!best) return null;
-  return { sequence: best.sequence, analysis: best.g.analysis, objectiveMet: best.g.met };
+  return { sequence: best.sequence, history: best.history, analysis: best.g.analysis, objectiveMet: best.g.met };
 }

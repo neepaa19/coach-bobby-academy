@@ -11,6 +11,7 @@ import {
   distanceToGoal, dist, round1, clamp, SPEED, WEIGHTS, formatSpeed, SPEED_UNITS, checkObjective,
 } from './engine.js';
 import { bestSequence } from './planner.js';
+import { missionStatus, snapshot } from './lessons.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
 import { reactToPass, styleFor, separate, DEF_STYLES, ATT_STYLES } from './tactics.js';
@@ -364,6 +365,7 @@ function loadScenario(id) {
   resetReasons();
   State.best = null;
   State.carryMode = false;
+  State.history = [snapshot(State.ours, State.theirs, s.startCarrier)];
   if ($('#boardCaption')) $('#boardCaption').hidden = true;
   State.sequence = [];
   State.submitted = false;
@@ -435,7 +437,12 @@ function goalShort(s) {
   return 'Complete the objective';
 }
 
-const goalMet = () => State.sequence.length > 0 && checkObjective(State.sequence, State.scenario);
+const mission = () => (State.scenario.mission ? missionStatus(State.scenario.mission, State.history) : null);
+const goalMet = () => {
+  if (!State.sequence.length) return false;
+  const m = mission();
+  return m ? m.every((x) => x.done) : checkObjective(State.sequence, State.scenario);
+};
 
 /** Live tracker above the pitch: where you stand against the objective right now. */
 function renderGoalStatus() {
@@ -447,6 +454,14 @@ function renderGoalStatus() {
   let cls = 'todo', html;
   if (State.submitted) { box.hidden = true; return; }
   box.hidden = false;
+  const m = mission();
+  if (m) {
+    const items = m.map((x) => `<li class="${x.done ? 'done' : x.broken ? 'broken' : ''}"><i>${x.done ? '✓' : x.broken ? '✗' : ''}</i>${x.label.split(':')[0]}</li>`).join('');
+    const all = m.every((x) => x.done);
+    box.className = `goal-status mission ${all ? 'met' : m.some((x) => x.broken) ? 'out' : 'open'}`;
+    box.innerHTML = `<ul class="checklist">${items}</ul><span class="mission-left">${all ? 'Lesson complete. Finish now.' : `${left} action${left === 1 ? '' : 's'} left`}</span>`;
+    return;
+  }
   if (!State.sequence.length) {
     html = `<b>🎯 ${goal} · up to ${max} actions</b><span>Pass or dribble. Most solutions need more than one action.</span>`;
   } else if (goalMet()) {
@@ -515,6 +530,7 @@ async function playPass(receiver, passType) {
     result,
   });
   State.carrierId = receiver.id;
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
   State.busy = false;
   $('#board').classList.remove('busy');
   refreshBoardState();
@@ -571,6 +587,7 @@ async function playCarry(point) {
     toLabel: from.pos,
     result,
   });
+  State.history.push(snapshot(State.ours, State.theirs, State.carrierId, State.sequence[State.sequence.length - 1]));
   State.busy = false;
   $('#board').classList.remove('busy');
   refreshBoardState();
@@ -589,6 +606,7 @@ function undo() {
   Board.drawTeam('ours', State.ours, { className: 'us' });
   State.carrierId = s.startCarrier;
   resetReasons();
+  State.history = [snapshot(State.ours, State.theirs, s.startCarrier)];
   const replay = [...State.sequence];
   State.sequence = [];
   const c0 = carrier();
@@ -603,6 +621,7 @@ function undo() {
     for (const p of State.ours) { const t = supTargets.get(p.id); if (t) Board.move(p, t.x, t.y); }
     State.carrierId = rec.id;
     State.sequence.push(step);
+    State.history.push(snapshot(State.ours, State.theirs, State.carrierId, step));
   }
   if (State.sequence.length) {
     const a = fitView(s), b = fitView(s, [...State.ours, ...State.theirs]);
@@ -630,7 +649,7 @@ function finishSequence() {
     return;
   }
   clearTimeout(State._confirmTimer);
-  const analysis = evaluateSequence(State.sequence, State.scenario);
+  const analysis = evaluateSequence(State.sequence, State.scenario, { objectiveMet: goalMet() });
   State.best = bestSequence({
     scenario: State.scenario,
     ours: State.startOurs.map((p) => ({ ...p })),
@@ -900,7 +919,13 @@ function renderScenarioHeader() {
   $('#ctxState').textContent = s.context.gameState;
   $('#ctxOpponent').textContent = s.context.opponent;
   $('#ctxInstruction').textContent = s.context.instruction;
-  $('#objectiveText').textContent = s.objective;
+  $('#objectiveText').textContent = s.lesson ? s.lesson.title : s.objective;
+  $('.objective-tag').textContent = s.lesson ? 'Lesson' : 'Goal';
+  const lessonBox = $('#lessonIdea');
+  if (lessonBox) {
+    lessonBox.hidden = !s.lesson;
+    if (s.lesson) lessonBox.innerHTML = `<p>${s.lesson.idea}</p><ol class="lesson-list">${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}:</b> ${i.label.split(':').slice(1).join(':').trim()}</li>`).join('')}</ol>`;
+  }
 }
 
 function renderSequence() {
@@ -917,11 +942,27 @@ function renderSequence() {
     </div>`).join('');
 }
 
+/** The lesson checklist, item by item, with what happened and why it matters. */
+function lessonDebrief(a) {
+  const s = State.scenario;
+  if (!s.lesson) return '';
+  const m = missionStatus(s.mission, State.history);
+  const line = s.lesson.debrief[a.verdict === 'success' ? 'success' : a.verdict === 'lost' ? 'lost' : 'partial'];
+  return `
+    <section class="debrief">
+      <h4>Lesson: ${s.lesson.title}</h4>
+      <ul class="debrief-items">
+        ${m.map((x) => `<li class="${x.done ? 'done' : 'missed'}"><i>${x.done ? '✓' : '✗'}</i><div><b>${x.label}</b><p>${x.detail}</p><em>${x.why}</em></div></li>`).join('')}
+      </ul>
+      <p class="debrief-coach">${line}</p>
+    </section>`;
+}
+
 /** Said plainly when the learner stopped short with passes still in hand. */
 function earlyStopNote(a) {
   const max = State.scenario.maxActions || 5;
   const n = State.sequence.length;
-  if (a.verdict === 'success' || n >= max) return '';
+  if (a.verdict === 'success' || n >= max || State.scenario.lesson) return '';
   const left = max - n;
   return `<li class="note note-warn"><b>You stopped after ${n} action${n === 1 ? '' : 's'}</b> with ${left} still available. ${goalShort(State.scenario)} was the goal; a sequence is allowed to take several passes to get there.</li>`;
 }
@@ -972,6 +1013,7 @@ function renderAnalysis(a) {
       </div>
     </div>
 
+    ${lessonDebrief(a)}
     <ul class="notes">
       ${earlyStopNote(a)}
       ${a.notes.map((n) => `<li class="note note-${n.tone}">${n.text}</li>`).join('')}
