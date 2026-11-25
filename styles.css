@@ -897,3 +897,9 @@ body:not([data-tab="train"]) #stateBadge { visibility: hidden; }
   .goal-status.mission span.mission-left { display: flex; justify-content: space-between; }
   .goal-status.mission span.mission-left br { display: none; }
 }
+
+.replay-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.board-caption.mine { background: rgba(76,157,255,.12); border-color: rgba(76,157,255,.45); }
+.board-caption.mine b { color: #9fcbff; }
+.goal-status[hidden] { display: none !important; }
+.replay-row .btn { font-size: .86rem; padding: 0 8px; white-space: nowrap; }

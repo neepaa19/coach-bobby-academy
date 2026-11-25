@@ -1204,7 +1204,10 @@ function bestSequenceCard(a) {
       <p class="best-compare">Yours: ${a.summary.passes} action${a.summary.passes === 1 ? '' : 's'}, rated ${a.rating}. Best found: ${b.sequence.length} action${b.sequence.length === 1 ? '' : 's'}, rated ${b.analysis.rating}${b.objectiveMet ? ', objective met' : ''}.</p>
       <ol class="best-steps">${steps}</ol>
       ${b.objectiveMet ? '' : '<p class="best-note">Even the best route found here does not fully reach the goal, so this scenario is genuinely hard. Some of these goals need a pass into a teammate\'s run, which the board cannot play yet.</p>'}
-      <button class="btn btn-primary btn-block" id="watchBestBtn">▶ Watch the best sequence</button>
+      <div class="replay-row">
+        <button class="btn btn-ghost" id="watchMineBtn">▶ Replay mine</button>
+        <button class="btn btn-primary" id="watchBestBtn">▶ Watch the best</button>
+      </div>
       <p class="best-foot">Played with the same scoring and the same defensive movement as your own passes. It is the strongest route the engine found, not the only good answer.</p>
     </section>`;
 }
@@ -1350,7 +1353,8 @@ function renderAnalysis(a) {
       if (open) btn.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
     };
   }
-  if ($('#watchBestBtn')) $('#watchBestBtn').onclick = playBestSequence;
+  if ($('#watchBestBtn')) $('#watchBestBtn').onclick = () => playSequence('best');
+  if ($('#watchMineBtn')) $('#watchMineBtn').onclick = () => playSequence('mine');
   $('#retryBtn').onclick = () => loadScenario(State.scenario.id);
   $('#nextScenarioBtn').onclick = () => {
     const i = SCENARIOS.findIndex((s) => s.id === State.scenario.id);
@@ -1365,17 +1369,22 @@ function renderAnalysis(a) {
  * Restores the opening picture and the arrows when it finishes.
  */
 /**
- * Replays the engine's best full sequence on the board, pass by pass, from
- * the opening picture, with a caption so you can follow along.
+ * Replays a full sequence on the board from the opening picture, action by
+ * action, with a caption: either yours ('mine') or the engine's best ('best').
+ * Both use the same movement, so the two can be compared directly.
  */
-async function playBestSequence() {
+async function playSequence(which) {
   const b = State.best;
-  if (!b || !b.sequence.length || State.busy) return;
-  const btn = $('#watchBestBtn');
+  const steps = which === 'mine' ? State.sequence : b && b.sequence;
+  if (!steps || !steps.length || State.busy) return;
+  const btns = ['#watchBestBtn', '#watchMineBtn'].map((id) => $(id)).filter(Boolean);
+  const btn = which === 'mine' ? $('#watchMineBtn') : $('#watchBestBtn');
+  const label = which === 'mine' ? 'Your sequence' : 'Best sequence';
   const cap = $('#boardCaption');
   State.busy = true;
   $('#board').classList.add('busy');
-  if (btn) { btn.disabled = true; btn.textContent = 'Playing…'; }
+  btns.forEach((x) => { x.disabled = true; });
+  if (btn) btn.textContent = 'Playing…';
   $('#board').scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
 
   // Back to the opening picture with nothing drawn over it.
@@ -1387,30 +1396,35 @@ async function playBestSequence() {
   let carrierNode = State.ours.find((p) => p.id === State.scenario.startCarrier);
   Board.setCarrier(carrierNode.id);
   Board.moveBall(carrierNode.x, carrierNode.y);
-  await new Promise((r) => setTimeout(r, 600));
+  cap.hidden = false;
+  cap.className = `board-caption ${which}`;
+  cap.innerHTML = `<b>${label}</b> from the opening picture`;
+  await new Promise((r) => setTimeout(r, 700));
 
-  for (let i = 0; i < b.sequence.length; i++) {
-    const st = b.sequence[i];
+  for (let i = 0; i < steps.length; i++) {
+    const st = steps[i];
     const node = State.ours.find((p) => p.id === st.to.id);
+    const head = `<b>${label} · ${i + 1} of ${steps.length}</b>`;
     if (st.kind === 'shot') {
-      cap.hidden = false;
-      cap.innerHTML = `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} shoots · ${st.result.xg.toFixed(2)} xG (about ${Math.round(st.result.xg * 100)} in 100 go in)`;
+      cap.innerHTML = `${head} ${st.fromLabel} shoots · ${st.result.xg.toFixed(2)} xG (about ${Math.round(st.result.xg * 100)} in 100 go in)`;
       await animateBallTo(carrierNode, { x: 105.5, y: carrierNode.y < 34 ? 36.5 : 31.5 }, 520);
       await new Promise((r) => setTimeout(r, 900));
       continue;
     }
     const receiver = st.kind === 'carry' ? { ...node, x: st.to.x, y: st.to.y } : node;
-    cap.hidden = false;
     cap.innerHTML = st.kind === 'carry'
-      ? `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} runs ${st.result.metrics.passDistance} yd with the ball · ${st.result.confidence}%`
-      : `<b>Action ${i + 1} of ${b.sequence.length}</b> ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
+      ? `${head} ${st.fromLabel} runs ${st.result.metrics.passDistance} yd with the ball · ${st.result.confidence}%`
+      : `${head} ${st.fromLabel} → ${st.toLabel} · ${st.result.passTypeLabel} · ${st.result.confidence}%`;
     await animatePass(carrierNode, receiver, st.result.passType);
     Board.setCarrier(node.id);
     carrierNode = node;
     await new Promise((r) => setTimeout(r, 650));
   }
-  cap.innerHTML = b.objectiveMet ? '<b>✓ Objective reached</b> That is the best sequence the engine found.' : '<b>End of the best sequence</b> The closest the engine got to the goal.';
-  await new Promise((r) => setTimeout(r, 1400));
+  const done = which === 'mine'
+    ? (State.analysis.verdict === 'success' ? '<b>✓ You completed it</b> That was your sequence.' : `<b>End of your sequence</b> ${State.analysis.headline}`)
+    : (b.objectiveMet ? '<b>✓ Objective reached</b> That is the best sequence the engine found.' : '<b>End of the best sequence</b> The closest the engine got to the goal.');
+  cap.innerHTML = done;
+  await new Promise((r) => setTimeout(r, 1500));
   cap.hidden = true;
 
   // Restore the review picture and its arrows.
@@ -1418,7 +1432,9 @@ async function playBestSequence() {
   refreshBoardState();
   State.busy = false;
   $('#board').classList.remove('busy');
-  if (btn) { btn.disabled = false; btn.textContent = '▶ Watch it again'; }
+  btns.forEach((x) => { x.disabled = false; });
+  if ($('#watchMineBtn')) $('#watchMineBtn').textContent = '▶ Replay mine';
+  if ($('#watchBestBtn')) $('#watchBestBtn').textContent = '▶ Watch the best';
 }
 
 /* ---------------------------- Profile ---------------------------- */
