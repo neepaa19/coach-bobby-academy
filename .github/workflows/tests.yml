@@ -30,3 +30,6 @@ jobs:
 
       - name: Run lesson tests
         run: node tests/lessons.test.mjs
+
+      - name: Run formation tests
+        run: node tests/formations.test.mjs

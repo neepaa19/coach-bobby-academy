@@ -61,8 +61,10 @@ export const SCENARIOS = [
       instruction: 'They press with three and leave their midfield stepping high. Find the pass that takes their front line out of the game.',
     },
     objective: 'Draw their press to one side, then get the ball to one of your front three in their half, without taking a reckless risk.',
+    formations: { ours: '4-3-3', theirs: '4-3-3' },
     lesson: {
       title: 'Beating a press: draw it, then break it',
+      shapes: 'Both teams line up in a 4-3-3, but they look very different. Theirs, without the ball, is a high press: the front three jump onto your back line and the midfield three step up behind them. Yours, with the ball, builds from the back: a back four with the holding midfielder in front, the two central midfielders higher, and the front three stretching their back line. Notice what their press leaves behind it: space between their midfield and defence.',
       idea: 'A pressing team commits players toward the ball. Every player who steps up to press is one fewer covering the space behind him. So you do not run away from the press: you invite it to one side, and when enough of them have come, you move the ball past them quickly, toward the space they just left.',
       debrief: {
         success: 'That is the pattern: you let them come, they committed players to one side, and the ball went past them before they could recover. Notice how much space your forwards had once the press was behind the ball.',

@@ -12,6 +12,7 @@ import {
 } from './engine.js';
 import { bestSequence } from './planner.js';
 import { missionStatus, snapshot } from './lessons.js';
+import { formationById, formationFromText, shape, LEVEL_NAMES } from './formations.js';
 import * as Mastery from './mastery.js';
 import { SCENARIOS, CURRICULUM, YOUTH_TRANSLATIONS } from './scenarios.js';
 import { reactToPass, styleFor, separate, DEF_STYLES, ATT_STYLES } from './tactics.js';
@@ -885,20 +886,101 @@ function showWhy(player, side) {
   $('#previewClose').onclick = hidePreview;
 }
 
+/** Which formation each team uses in this scenario (explicit, or read from the brief). */
+function formationsFor(s) {
+  const f = s.formations || {};
+  return {
+    ours: f.ours || '4-3-3',
+    theirs: f.theirs || formationFromText(s.context && s.context.opponent),
+  };
+}
+
+/**
+ * A small pitch showing one formation, with a toggle between its shape
+ * without the ball and with it. Players glide between the two so you can
+ * see who moves where, and why.
+ */
+function shapeCardHTML(formationId, side, phase) {
+  const f = formationById(formationId);
+  if (!f) return '';
+  const uid = `shape-${side}`;
+  return `
+    <div class="shape-card" id="${uid}" data-formation="${f.id}" data-side="${side}" data-phase="${phase}">
+      <div class="shape-head">
+        <b>${f.name}</b><span class="shape-level">Level ${f.level} · ${LEVEL_NAMES[f.level]}</span>
+      </div>
+      <div class="shape-toggle" role="tablist">
+        <button data-phase="oop" class="${phase === 'oop' ? 'on' : ''}">Without the ball</button>
+        <button data-phase="ip" class="${phase === 'ip' ? 'on' : ''}">With the ball</button>
+      </div>
+      <svg class="shape-pitch ${side}" viewBox="0 0 68 105" aria-label="${f.name} shape">
+        <rect x="0" y="0" width="68" height="105" class="sp-turf"/>
+        <rect x="0.4" y="0.4" width="67.2" height="104.2" class="sp-line"/>
+        <line x1="0.4" y1="52.5" x2="67.6" y2="52.5" class="sp-line"/>
+        <circle cx="34" cy="52.5" r="9.15" class="sp-line"/>
+        <rect x="13.85" y="0.4" width="40.3" height="16.5" class="sp-line"/>
+        <rect x="13.85" y="88.1" width="40.3" height="16.5" class="sp-line"/>
+        <g class="sp-players"></g>
+      </svg>
+      <p class="shape-phase-name"></p>
+      <p class="shape-how"></p>
+      <div class="shape-sw">
+        <div><h5>Strengths</h5><ul>${f.strengths.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+        <div><h5>Weaknesses</h5><ul>${f.weaknesses.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+      </div>
+    </div>`;
+}
+
+function mountShapeCard(card) {
+  if (!card) return;
+  const f = formationById(card.dataset.formation);
+  const side = card.dataset.side;
+  const g = card.querySelector('.sp-players');
+  const nodes = new Map();
+  const place = (phase, animate) => {
+    card.dataset.phase = phase;
+    card.querySelectorAll('.shape-toggle button').forEach((b) => b.classList.toggle('on', b.dataset.phase === phase));
+    card.querySelector('.shape-phase-name').textContent = phase === 'ip' ? f.ipName : f.oopName;
+    card.querySelector('.shape-how').textContent = phase === 'ip' ? f.ipHow : f.oopHow;
+    for (const p of shape(f.id, phase, side)) {
+      let n = nodes.get(p.id);
+      if (!n) {
+        n = document.createElementNS(SVG_NS, 'g');
+        n.setAttribute('class', `sp-player ${side}${p.role === 'keeper' ? ' keeper' : ''}`);
+        n.innerHTML = `<circle r="2.3"></circle><text y="0.75">${p.pos}</text>`;
+        g.appendChild(n);
+        nodes.set(p.id, n);
+      }
+      n.style.transition = animate && !reducedMotion() ? 'transform .7s ease' : 'none';
+      // Same orientation as the board: attacking up, our right on the right.
+      n.style.transform = `translate(${68 - p.y}px, ${105 - p.x}px)`;
+    }
+  };
+  place(card.dataset.phase, false);
+  card.querySelectorAll('.shape-toggle button').forEach((b) => { b.onclick = () => place(b.dataset.phase, true); });
+}
+
 /** The style chips: what each team is trying to do, in plain English. */
 function renderStyleChips() {
   const them = DEF_STYLES[State.styles.theirs];
   const us = ATT_STYLES[State.styles.ours];
   const host = $('#styleChips');
   if (!host) return;
+  const fm = formationsFor(State.scenario);
   host.innerHTML = `
-    <button class="style-chip them" data-side="them"><i></i>Them: ${them.label}</button>
-    <button class="style-chip us" data-side="us"><i></i>Us: ${us.label}</button>`;
+    <button class="style-chip them" data-side="them"><i></i>Them: ${fm.theirs ? fm.theirs + ' · ' : ''}${them.label}</button>
+    <button class="style-chip us" data-side="us"><i></i>Us: ${fm.ours} · ${us.label}</button>`;
   $$('.style-chip', host).forEach((b) => {
     b.onclick = () => {
-      const st = b.dataset.side === 'them' ? them : us;
-      openSheet(st.label, `<p class="style-summary">${st.summary}</p>
-        <p class="muted small">This is a coaching model of the style, used to move every player on the board. It is not a claim about how any particular real team plays. Tap any opponent on the pitch to see why he moved.</p>`);
+      const isThem = b.dataset.side === 'them';
+      const st = isThem ? them : us;
+      const fid = isThem ? fm.theirs : fm.ours;
+      openSheet(`${isThem ? 'Them' : 'Us'}: ${fid ? fid + ', ' : ''}${st.label.toLowerCase()}`, `
+        ${fid ? shapeCardHTML(fid, isThem ? 'theirs' : 'ours', isThem ? 'oop' : 'ip') : ''}
+        <h4 class="style-title">How they play it: ${st.label}</h4>
+        <p class="style-summary">${st.summary}</p>
+        <p class="muted small">Shapes and styles are coaching models used to move every player on the board, not claims about any particular real team. Tap any opponent on the pitch to see why he moved.</p>`);
+      mountShapeCard($('#sheetBody .shape-card'));
     };
   });
 }
@@ -924,7 +1006,7 @@ function renderScenarioHeader() {
   const lessonBox = $('#lessonIdea');
   if (lessonBox) {
     lessonBox.hidden = !s.lesson;
-    if (s.lesson) lessonBox.innerHTML = `<p>${s.lesson.idea}</p><ol class="lesson-list">${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}:</b> ${i.label.split(':').slice(1).join(':').trim()}</li>`).join('')}</ol>`;
+    if (s.lesson) lessonBox.innerHTML = `<p>${s.lesson.idea}</p>${s.lesson.shapes ? `<p class="lesson-shapes"><b>The shapes.</b> ${s.lesson.shapes} <span class="muted">Tap the team buttons above the pitch to see each shape with and without the ball.</span></p>` : ''}<ol class="lesson-list">${s.mission.items.map((i) => `<li><b>${i.label.split(':')[0]}:</b> ${i.label.split(':').slice(1).join(':').trim()}</li>`).join('')}</ol>`;
   }
 }
 

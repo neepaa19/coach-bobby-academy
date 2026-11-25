@@ -130,7 +130,7 @@ const isKeeper = (p) => p.role === 'keeper';
  */
 const BACK_RE = /^(GK|[LR]?CB|[LR]B|[LR]WB|SW)$/;
 const FRONT_RE = /^([LR]W|ST|CF|[LR]S|[LR]F|SS)$/;
-const MID_RE = /^([LR]?DM|[LR]?CM|[LR]?AM|[LR]M)$/;
+const MID_RE = /^([LR]?DM|[LR]?CM|[LR]?AM|[LR]M|[LR]H|[LR]I)$/;
 /** Unit from a position label alone: 'back' | 'mid' | 'front' | null. */
 export function unitOfPos(pos) {
   if (/^GK$/.test(pos)) return 'keeper';
